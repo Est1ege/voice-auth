@@ -1,0 +1,481 @@
+<!-- web/templates/admin/auth_monitor.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication Monitor - Voice Recognition System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        .live-monitor {
+            border: 1px solid #ddd;
+            height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            margin-bottom: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        .auth-event {
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .auth-success {
+            background-color: rgba(40, 167, 69, 0.1);
+            border-left: 4px solid #28a745;
+        }
+        .auth-failure {
+            background-color: rgba(220, 53, 69, 0.1);
+            border-left: 4px solid #dc3545;
+        }
+        .auth-spoof {
+            background-color: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #ffc107;
+        }
+        .similarity-meter {
+            height: 10px;
+            margin-top: 8px;
+            border-radius: 5px;
+        }
+        .mic-active {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .card {
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Access Logs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Auth Monitor
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Voice Authentication Monitor</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="toggleMicBtn">
+                                <i class="bi bi-mic"></i> Start Listening
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="clearMonitorBtn">
+                                <i class="bi bi-x-circle"></i> Clear Log
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="card shadow mb-4">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0"><i class="bi bi-mic-fill"></i> Active Authentication Session</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info mb-3" id="micStatus">
+                                    <i class="bi bi-info-circle"></i> Click "Start Listening" to begin monitoring.
+                                </div>
+                                
+                                <div class="live-monitor" id="authMonitor">
+                                    <!-- Authentication events will be added here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card shadow mb-4">
+                            <div class="card-header bg-info text-white">
+                                <h5 class="mb-0"><i class="bi bi-graph-up"></i> Statistics</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-6 text-center mb-4">
+                                        <h3 id="authSuccessCount">0</h3>
+                                        <p class="text-success">Successful</p>
+                                    </div>
+                                    <div class="col-6 text-center mb-4">
+                                        <h3 id="authFailCount">0</h3>
+                                        <p class="text-danger">Rejected</p>
+                                    </div>
+                                </div>
+                                
+                                <h6>Average Voice Similarity</h6>
+                                <div class="progress mb-3">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 0%" 
+                                         id="avgSimilarityBar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                                </div>
+                                
+                                <h6>Spoofing Detection</h6>
+                                <div class="alert alert-warning text-center" id="spoofStats">
+                                    <span id="spoofCount">0</span> attempts
+                                </div>
+                                
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-outline-secondary" id="downloadStatsBtn">
+                                        <i class="bi bi-download"></i> Download Report
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card shadow">
+                            <div class="card-header bg-secondary text-white">
+                                <h5 class="mb-0"><i class="bi bi-sliders"></i> Settings</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Voice Similarity Threshold</label>
+                                    <select class="form-select" id="similarityThreshold">
+                                        <option value="0.65">Low (65%)</option>
+                                        <option value="0.75" selected>Medium (75%)</option>
+                                        <option value="0.85">High (85%)</option>
+                                        <option value="0.95">Very High (95%)</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">Anti-Spoofing Sensitivity</label>
+                                    <select class="form-select" id="spoofSensitivity">
+                                        <option value="0.3">Low</option>
+                                        <option value="0.5" selected>Medium</option>
+                                        <option value="0.7">High</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="autoThresholdSwitch" checked>
+                                    <label class="form-check-label" for="autoThresholdSwitch">Automatic Threshold Adjustment</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let listening = false;
+        let successCount = 0;
+        let failCount = 0;
+        let spoofCount = 0;
+        let similaritySum = 0;
+        let attemptCount = 0;
+        
+        const toggleMicBtn = document.getElementById('toggleMicBtn');
+        const micStatus = document.getElementById('micStatus');
+        const authMonitor = document.getElementById('authMonitor');
+        
+        // Function to update statistics
+        function updateStats() {
+            document.getElementById('authSuccessCount').textContent = successCount;
+            document.getElementById('authFailCount').textContent = failCount;
+            document.getElementById('spoofCount').textContent = spoofCount;
+            
+            const avgSimilarity = attemptCount > 0 ? (similaritySum / attemptCount) * 100 : 0;
+            const avgSimilarityBar = document.getElementById('avgSimilarityBar');
+            avgSimilarityBar.style.width = `${avgSimilarity}%`;
+            avgSimilarityBar.textContent = `${avgSimilarity.toFixed(1)}%`;
+        }
+        
+        // Function to create authentication event in the monitor
+        function addAuthEvent(type, user, similarity = null, details = '') {
+            const event = document.createElement('div');
+            const timestamp = new Date().toLocaleTimeString();
+            let eventClass = '';
+            let eventIcon = '';
+            let eventTitle = '';
+            
+            switch(type) {
+                case 'success':
+                    eventClass = 'auth-success';
+                    eventIcon = 'bi-check-circle-fill text-success';
+                    eventTitle = `Access granted: ${user}`;
+                    successCount++;
+                    break;
+                case 'failure':
+                    eventClass = 'auth-failure';
+                    eventIcon = 'bi-x-circle-fill text-danger';
+                    eventTitle = user ? `Access denied: ${user}` : 'User not recognized';
+                    failCount++;
+                    break;
+                case 'spoof':
+                    eventClass = 'auth-spoof';
+                    eventIcon = 'bi-exclamation-triangle-fill text-warning';
+                    eventTitle = 'Spoofing attempt detected';
+                    spoofCount++;
+                    break;
+            }
+            
+            if (similarity !== null) {
+                similaritySum += similarity;
+                attemptCount++;
+            }
+            
+            let similarityHtml = '';
+            if (similarity !== null) {
+                const percent = (similarity * 100).toFixed(1);
+                const barColor = similarity > 0.75 ? 'bg-success' : similarity > 0.6 ? 'bg-warning' : 'bg-danger';
+                similarityHtml = `
+                    <div class="mt-2">
+                        <small>Voice similarity: ${percent}%</small>
+                        <div class="progress similarity-meter">
+                            <div class="progress-bar ${barColor}" role="progressbar" 
+                                 style="width: ${percent}%" aria-valuenow="${percent}" 
+                                 aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            event.className = `auth-event ${eventClass}`;
+            event.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="bi ${eventIcon} me-2"></i>
+                    <div>
+                        <div><strong>${eventTitle}</strong></div>
+                        <div><small>${timestamp}</small></div>
+                        ${details ? `<div class="mt-1">${details}</div>` : ''}
+                        ${similarityHtml}
+                    </div>
+                </div>
+            `;
+            
+            authMonitor.prepend(event);
+            updateStats();
+            
+            // Clean up old events if there are too many
+            while (authMonitor.children.length > 100) {
+                authMonitor.removeChild(authMonitor.lastChild);
+            }
+        }
+        
+        // Toggle listening mode
+        toggleMicBtn.addEventListener('click', function() {
+            listening = !listening;
+            
+            if (listening) {
+                // Start monitoring via WebSocket or periodic API polling
+                this.innerHTML = '<i class="bi bi-mic-fill mic-active"></i> Stop Listening';
+                this.classList.replace('btn-outline-secondary', 'btn-danger');
+                micStatus.innerHTML = '<i class="bi bi-mic-fill mic-active"></i> System is actively listening. Users can speak phrases for authentication.';
+                micStatus.classList.replace('alert-info', 'alert-success');
+                
+                // Code to start authentication monitoring
+                startAuthMonitoring();
+            } else {
+                // Stop monitoring
+                this.innerHTML = '<i class="bi bi-mic"></i> Start Listening';
+                this.classList.replace('btn-danger', 'btn-outline-secondary');
+                micStatus.innerHTML = '<i class="bi bi-info-circle"></i> Monitoring stopped.';
+                micStatus.classList.replace('alert-success', 'alert-info');
+                
+                // Code to stop monitoring
+                stopAuthMonitoring();
+            }
+        });
+        
+        // Clear the log
+        document.getElementById('clearMonitorBtn').addEventListener('click', function() {
+            authMonitor.innerHTML = '';
+        });
+        
+        // Function to download report
+        document.getElementById('downloadStatsBtn').addEventListener('click', function() {
+            // Create report and download it
+            const report = {
+                timestamp: new Date().toISOString(),
+                stats: {
+                    successCount,
+                    failCount,
+                    spoofCount,
+                    avgSimilarity: attemptCount > 0 ? (similaritySum / attemptCount) : 0
+                },
+                settings: {
+                    similarityThreshold: document.getElementById('similarityThreshold').value,
+                    spoofSensitivity: document.getElementById('spoofSensitivity').value,
+                    autoThreshold: document.getElementById('autoThresholdSwitch').checked
+                }
+            };
+            
+            const blob = new Blob([JSON.stringify(report, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `auth-report-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        
+        // Functions for authentication monitoring (via WebSocket or periodic polling)
+        let monitoringInterval;
+        
+        function startAuthMonitoring() {
+            // Demo code - in reality this should be configured to use WebSocket or API polls
+            monitoringInterval = setInterval(() => {
+                // This function should request current data from the server
+                // Here we're simulating for demonstration
+                fetchAuthEvents();
+            }, 3000);
+        }
+        
+        function stopAuthMonitoring() {
+            if (monitoringInterval) {
+                clearInterval(monitoringInterval);
+            }
+        }
+        
+        function fetchAuthEvents() {
+            // Here should be a request to the server for new authentication events
+            // Demo code with data simulation
+            fetch('/api/auth/recent-events')
+                .then(response => response.json())
+                .then(data => {
+                    // Process received events
+                    processAuthEvents(data.events);
+                })
+                .catch(error => {
+                    console.error('Error fetching auth events:', error);
+                    // Simulate data for demonstration
+                    simulateAuthEvent();
+                });
+        }
+        
+        // Function to simulate events (for demonstration only)
+        function simulateAuthEvent() {
+            const types = ['success', 'failure', 'spoof'];
+            const users = ['John Smith', 'Sarah Johnson', 'Michael Brown', '', ''];
+            const type = types[Math.floor(Math.random() * types.length)];
+            let user = '';
+            let similarity = null;
+            
+            if (type === 'success') {
+                user = users[Math.floor(Math.random() * 3)]; // Only real users
+                similarity = Math.random() * 0.25 + 0.75; // 75-100%
+            } else if (type === 'failure') {
+                user = Math.random() > 0.5 ? users[Math.floor(Math.random() * 3)] : ''; // Could be unknown
+                similarity = Math.random() * 0.25 + 0.5; // 50-75%
+            } else {
+                // Spoofing
+                similarity = Math.random() * 0.5 + 0.5; // 50-100% (could be high)
+            }
+            
+            let details = '';
+            if (type === 'spoof') {
+                const spoofTypes = ['Recorded voice playback', 'Synthesized speech', 'Voice modification'];
+                details = `Attack type: ${spoofTypes[Math.floor(Math.random() * spoofTypes.length)]}`;
+            }
+            
+            addAuthEvent(type, user, similarity, details);
+        }
+        
+        // Function to process authentication events
+        function processAuthEvents(events) {
+            if (!events || events.length === 0) {
+                // If no events, sometimes simulate one for demonstration
+                if (Math.random() < 0.3) {
+                    simulateAuthEvent();
+                }
+                return;
+            }
+            
+            events.forEach(event => {
+                addAuthEvent(
+                    event.type,
+                    event.user ? event.user.name : '',
+                    event.similarity,
+                    event.details
+                );
+            });
+        }
+    </script>

@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Голосовая аутентификация</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .auth-container {
+            max-width: 600px;
+            margin: 50px auto;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+        .auth-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .auth-title {
+            font-size: 24px;
+            color: #343a40;
+            margin-bottom: 10px;
+        }
+        .auth-subtitle {
+            font-size: 16px;
+            color: #6c757d;
+        }
+        .mic-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .mic-icon {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .mic-icon.recording {
+            background-color: #dc3545;
+            animation: pulse 1.5s infinite;
+        }
+        .mic-icon svg {
+            width: 50px;
+            height: 50px;
+            fill: #6c757d;
+        }
+        .mic-icon.recording svg {
+            fill: #fff;
+        }
+        .status-text {
+            margin-top: 15px;
+            font-size: 16px;
+            color: #6c757d;
+        }
+        .visualizer {
+            width: 100%;
+            height: 100px;
+            margin: 20px 0;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .device-selector {
+            margin-bottom: 20px;
+        }
+        .auth-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+        .auth-info {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="auth-container">
+            <div class="auth-header">
+                <h1 class="auth-title">Голосовая аутентификация</h1>
+                <p class="auth-subtitle">Пожалуйста, произнесите фразу для авторизации</p>
+            </div>
+            
+            <div class="device-selector">
+                <label for="microphoneSelect">Выберите микрофон:</label>
+                <select id="microphoneSelect" class="form-control">
+                    <option value="">Загрузка...</option>
+                </select>
+            </div>
+            
+            <div class="phrase-container">
+                <div class="alert alert-info">
+                    <strong>Контрольная фраза:</strong> 
+                    <span id="authPhrase">Моя система голосовой аутентификации работает отлично</span>
+                </div>
+            </div>
+            
+            <div class="mic-container">
+                <div id="micIcon" class="mic-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                </div>
+                <p id="statusText" class="status-text">Нажмите на микрофон, чтобы начать запись</p>
+            </div>
+            
+            <canvas id="visualizer" class="visualizer"></canvas>
+            
+            <div class="auth-actions">
+                <button id="cancelButton" class="btn btn-secondary">Отмена</button>
+                <button id="submitButton" class="btn btn-primary" disabled>Авторизоваться</button>
+            </div>
+            
+            <div class="auth-info">
+                <p>Система использует биометрию голоса для подтверждения вашей личности. Запись будет проанализирована на соответствие вашему голосовому профилю.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для сообщений -->
+    <div class="modal fade" id="messageModal" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Сообщение</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        /**
+         * Класс для работы с микрофоном
+         */
+        class MicrophoneHandler {
+            constructor(options = {}) {
+                // Настройки по умолчанию
+                this.options = Object.assign({
+                    recordingTime: 5000, // в миллисекундах
+                    sampleRate: 16000,
+                    audioFormat: 'audio/wav',
+                    onStart: () => {},
+                    onStop: () => {},
+                    onData: (blob) => {},
+                    onError: (error) => { console.error('Microphone error:', error); },
+                }, options);
+                
+                // Состояние микрофона
+                this.isRecording = false;
+                this.stream = null;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                this.availableDevices = [];
+                this.selectedDeviceId = null;
+                
+                // Таймеры
+                this.recordingTimeout = null;
+            }
+            
+            /**
+             * Получение списка доступных аудиоустройств
+             * @returns {Promise<Array>} Массив доступных аудиоустройств
+             */
+            async getAvailableDevices() {
+                try {
+                    // Запрос доступа к микрофону для получения списка устройств
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    // Освобождение ресурсов
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    // Получение списка устройств
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    this.availableDevices = devices.filter(device => device.kind === 'audioinput');
+                    
+                    return this.availableDevices;
+                } catch (error) {
+                    this.options.onError(error);
+                    return [];
+                }
+            }
+            
+            /**
+             * Выбор аудиоустройства для записи
+             * @param {string} deviceId ID устройства
+             */
+            selectDevice(deviceId) {
+                this.selectedDeviceId = deviceId;
+            }
+            
+            /**
+             * Запрос разрешения на использование микрофона
+             * @returns {Promise<boolean>} Результат запроса
+             */
+            async requestPermission() {
+                try {
+                    // Конфигурация для запроса доступа
+                    const constraints = { 
+                        audio: this.selectedDeviceId ? 
+                            { deviceId: { exact: this.selectedDeviceId } } : 
+                            true 
+                    };
+                    
+                    // Запрос доступа
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    
+                    // Освобождение ресурсов, так как это только проверка разрешения
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    return true;
+                } catch (error) {
+                    this.options.onError(error);
+                    return false;
+                }
+            }
+            
+            /**
+             * Начало записи с микрофона
+             * @returns {Promise<boolean>} Успешность начала записи
+             */
+            async startRecording() {
+                if (this.isRecording) {
+                    return false;
+                }
+                
+                try {
+                    // Конфигурация для запроса доступа
+                    const constraints = { 
+                        audio: this.selectedDeviceId ? 
+                            { deviceId: { exact: this.selectedDeviceId } } : 
+                            true 
+                    };
+                    
+                    // Получение потока с микрофона
+                    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    
+                    // Создание MediaRecorder для записи
+                    this.mediaRecorder = new MediaRecorder(this.stream);
+                    
+                    // Очистка предыдущих данных
+                    this.audioChunks = [];
+                    
+                    // Обработчики событий
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            this.audioChunks.push(event.data);
+                        }
+                    };
+                    
+                    this.mediaRecorder.onstop = () => {
+                        // Создание аудио blob из собранных chunks
+                        const audioBlob = new Blob(this.audioChunks, { type: this.options.audioFormat });
+                        
+                        // Остановка потока
+                        this.stream.getTracks().forEach(track => track.stop());
+                        
+                        // Сброс состояния
+                        this.isRecording = false;
+                        this.stream = null;
+                        
+                        // Вызов колбэка с данными
+                        this.options.onStop();
+                        this.options.onData(audioBlob);
+                    };
+                    
+                    // Начало записи
+                    this.mediaRecorder.start();
+                    this.isRecording = true;
+                    
+                    // Вызов колбэка
+                    this.options.onStart();
+                    
+                    // Установка таймера для автоматической остановки записи
+                    if (this.options.recordingTime > 0) {
+                        this.recordingTimeout = setTimeout(() => {
+                            this.stopRecording();
+                        }, this.options.recordingTime);
+                    }
+                    
+                    return true;
+                } catch (error) {
+                    this.options.onError(error);
+                    return false;
+                }
+            }
+            
+            /**
+             * Остановка записи с микрофона
+             */
+            stopRecording() {
+                if (!this.isRecording || !this.mediaRecorder) {
+                    return;
+                }
+                
+                // Отмена таймера
+                if (this.recordingTimeout) {
+                    clearTimeout(this.recordingTimeout);
+                    this.recordingTimeout = null;
+                }
+                
+                // Остановка записи
+                this.mediaRecorder.stop();
+            }
+            
+            /**
+             * Проверка поддержки Audio API в браузере
+             * @returns {boolean} Поддерживается ли Audio API
+             */
+            static isSupported() {
+                return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            }
+        }
+
+        /**
+         * Утилиты для работы с аудио
+         */
+        class AudioUtils {
+            /**
+             * Конвертация Blob в объект File для отправки на сервер
+             * @param {Blob} blob Аудио Blob
+             * @param {string} filename Имя файла
+             * @returns {File} Файл для отправки
+             */
+            static blobToFile(blob, filename) {
+                return new File([blob], filename, { type: blob.type });
+            }
+            
+            /**
+             * Конвертация аудио Blob в ArrayBuffer
+             * @param {Blob} blob Аудио Blob
+             * @returns {Promise<ArrayBuffer>} ArrayBuffer с данными
+             */
+            static async blobToArrayBuffer(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsArrayBuffer(blob);
+                });
+            }
+            
+            /**
+             * Конвертация аудио Blob в формат base64
+             * @param {Blob} blob Аудио Blob
+             * @returns {Promise<string>} Строка base64
+             */
+            static async blobToBase64(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            }
+            
+            /**
+             * Воспроизведение аудио Blob
+             * @param {Blob} blob Аудио Blob
+             * @returns {HTMLAudioElement} Элемент аудио
+             */
+            static playAudio(blob) {
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                
+                // Очистка URL после окончания воспроизведения
+                audio.onended = () => {
+                    URL.revokeObjectURL(url);
+                };
+                
+                audio.play();
+                return audio;
+            }
+        }
+
+        // Проверка поддержки API для работы с микрофоном
+        if (!MicrophoneHandler.isSupported()) {
+            showMessage('Ошибка', 'Ваш браузер не поддерживает запись с микрофона. Пожалуйста, используйте современный браузер.');
+        }
+
+        // Инициализация переменных
+        let audioBlob = null;
+        let isProcessing = false;
+        
+        // Инициализация обработчика микрофона
+        const microphoneHandler = new MicrophoneHandler({
+            recordingTime: 5000, // 5 секунд записи
+            onStart: () => {
+                // Обновление интерфейса при начале записи
+                $('#micIcon').addClass('recording');
+                $('#statusText').text('Запись...');
+                $('#submitButton').prop('disabled', true);
+            },
+            onStop: () => {
+                // Обновление интерфейса при окончании записи
+                $('#micIcon').removeClass('recording');
+                $('#statusText').text('Запись завершена');
+                $('#submitButton').prop('disabled', false);
+            },
+            onData: (blob) => {
+                // Сохранение записанного аудио
+                audioBlob = blob;
+                
+                // Визуализация (упрощённая без Canvas API)
+                const canvas = document.getElementById('visualizer');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(0, 0, canvas.width, canvas.height/2);
+            },
+            onError: (error) => {
+                showMessage('Ошибка микрофона', `Произошла ошибка при работе с микрофоном: ${error.message}`);
+                console.error('Microphone error:', error);
+            }
+        });
+        
+        // Загрузка списка доступных микрофонов
+        async function loadMicrophones() {
+            try {
+                const devices = await microphoneHandler.getAvailableDevices();
+                const $select = $('#microphoneSelect');
+                
+                $select.empty();
+                
+                if (devices.length === 0) {
+                    $select.append($('<option></option>').val('').text('Микрофоны не найдены'));
+                } else {
+                    devices.forEach(device => {
+                        $select.append($('<option></option>').val(device.deviceId).text(device.label || `Микрофон ${device.deviceId.substring(0, 5)}...`));
+                    });
+                    
+                    // Выбор первого микрофона по умолчанию
+                    microphoneHandler.selectDevice(devices[0].deviceId);
+                }
+            } catch (error) {
+                console.error('Error loading microphones:', error);
+                showMessage('Ошибка', 'Не удалось получить список микрофонов. Возможно, вы не предоставили разрешение на использование микрофона.');
+            }
+        }
+        
+        // Отправка аудио на сервер для аутентификации
+        async function submitAudio() {
+            if (!audioBlob || isProcessing) {
+                return;
+            }
+            
+            isProcessing = true;
+            $('#submitButton').prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Обработка...');
+            
+            try {
+                // Создание формы для отправки
+                const formData = new FormData();
+                formData.append('audio_data', AudioUtils.blobToFile(audioBlob, 'voice_auth.wav'));
+                
+                // Отправка запроса
+                const response = await fetch('/authorize', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                // Обработка ответа
+                const result = await response.json();
+                
+                if (result.authorized) {
+                    // Авторизация успешна
+                    showMessage('Успешная авторизация', `Добро пожаловать, ${result.user.name}!`, () => {
+                        window.location.href = '/user';
+                    });
+                } else {
+                    // Авторизация не удалась
+                    showMessage('Ошибка авторизации', result.message || 'Не удалось авторизоваться. Попробуйте еще раз.');
+                }
+            } catch (error) {
+                console.error('Authentication error:', error);
+                showMessage('Ошибка', 'Произошла ошибка при отправке аудио. Пожалуйста, попробуйте еще раз.');
+            } finally {
+                isProcessing = false;
+                $('#submitButton').prop('disabled', false).text('Авторизоваться');
+            }
+        }
+        
+        // Функция для отображения модальных окон с сообщениями
+        function showMessage(title, message, callback) {
+            $('#modalTitle').text(title);
+            $('#modalBody').text(message);
+            
+            const $modal = $('#messageModal');
+            $modal.modal('show');
+            
+            if (callback) {
+                $modal.on('hidden.bs.modal', function() {
+                    callback();
+                    $modal.off('hidden.bs.modal');
+                });
+            }
+        }
+        
+        // Обработчики событий
+        $(document).ready(function() {
+            // Загрузка списка микрофонов при загрузке страницы
+            loadMicrophones();
+            
+            // Обработчик выбора микрофона
+            $('#microphoneSelect').change(function() {
+                const deviceId = $(this).val();
+                if (deviceId) {
+                    microphoneHandler.selectDevice(deviceId);
+                }
+            });
+            
+            // Обработчик клика на иконку микрофона
+            $('#micIcon').click(function() {
+                if (!microphoneHandler.isRecording) {
+                    // Запрос разрешения и начало записи
+                    microphoneHandler.requestPermission().then(permitted => {
+                        if (permitted) {
+                            microphoneHandler.startRecording();
+                        } else {
+                            showMessage('Нет доступа к микрофону', 'Для работы системы необходим доступ к микрофону. Пожалуйста, разрешите доступ в настройках браузера.');
+                        }
+                    });
+                } else {
+                    // Остановка записи
+                    microphoneHandler.stopRecording();
+                }
+            });
+            
+            // Обработчик кнопки отмены
+            $('#cancelButton').click(function() {
+                if (microphoneHandler.isRecording) {
+                    microphoneHandler.stopRecording();
+                }
+                window.location.href = '/';
+            });
+            
+            // Обработчик кнопки отправки
+            $('#submitButton').click(function() {
+                submitAudio();
+            });
+        });
+    </script>
+</body>
+</html>

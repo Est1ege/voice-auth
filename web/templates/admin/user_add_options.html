@@ -1,0 +1,247 @@
+<!-- web/templates/admin/user_add_options.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Users - Voice Recognition System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .options-card {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .option-card {
+            transition: transform 0.3s;
+            height: 100%;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+        .option-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        }
+        .card-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+        .card-header {
+            border-top-left-radius: 10px !important;
+            border-top-right-radius: 10px !important;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Recognition System</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Access Logs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Export/Import
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Auth Monitor
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Add Users</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <a href="{{ url_for('manage_users') }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Back to Users
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow options-card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-person-plus-fill"></i> Choose a method to add users</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-4">
+                            <!-- Standard Addition -->
+                            <div class="col-md-4">
+                                <a href="{{ url_for('add_user') }}" class="text-decoration-none text-dark">
+                                    <div class="card option-card h-100 text-center p-4">
+                                        <div class="card-body">
+                                            <div class="card-icon text-primary">
+                                                <i class="bi bi-person-plus"></i>
+                                            </div>
+                                            <h5 class="card-title">Standard Addition</h5>
+                                            <p class="card-text">Creating a user with all data (name, email, role) and voice recording through the web interface.</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+                            
+                            <!-- Simple Addition -->
+                            <div class="col-md-4">
+                                <a href="{{ url_for('simple_add_user') }}" class="text-decoration-none text-dark">
+                                    <div class="card option-card h-100 text-center p-4 border-success">
+                                        <div class="card-body">
+                                            <div class="card-icon text-success">
+                                                <i class="bi bi-person-check"></i>
+                                            </div>
+                                            <h5 class="card-title">Simple Addition</h5>
+                                            <p class="card-text">Quick user addition with just a name and uploading ready WAV files from your computer.</p>
+                                            <div class="mt-2 d-inline-block badge bg-success">Recommended</div>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+                            
+                            <!-- Batch Addition -->
+                            <div class="col-md-4">
+                                <a href="{{ url_for('batch_import_view') }}" class="text-decoration-none text-dark">
+                                    <div class="card option-card h-100 text-center p-4">
+                                        <div class="card-body">
+                                            <div class="card-icon text-info">
+                                                <i class="bi bi-people"></i>
+                                            </div>
+                                            <h5 class="card-title">Batch Addition</h5>
+                                            <p class="card-text">Import multiple users at once from a directory or ZIP archive.</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow options-card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> User Addition Recommendations</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>Voice Sample Requirements:</h5>
+                                <ul>
+                                    <li>Minimum 5 WAV files per user</li>
+                                    <li>Duration of each recording: 3-10 seconds</li>
+                                    <li>Format: WAV, 16kHz, 16bit, mono</li>
+                                    <li>Good sound quality, minimal background noise</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h5>For Batch Addition:</h5>
+                                <p>Prepare file structure:</p>
+                                <pre class="bg-light p-2 rounded">directory/
+├── John_Smith/
+│   ├── recording1.wav
+│   ├── recording2.wav
+│   └── ... (at least 5 recordings)
+├── Jane_Doe/
+│   ├── recording1.wav
+│   └── ...
+└── ...</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

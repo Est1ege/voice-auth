@@ -1,0 +1,362 @@
+<!-- web/templates/admin/simple_add_user.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Упрощенное добавление пользователя - ГолосДоступ</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .form-card {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        #audioPreview {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .file-preview {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 6px 12px;
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-preview.valid {
+            background-color: #e8f5e9;
+        }
+        .file-preview.invalid {
+            background-color: #ffebee;
+        }
+        .drop-zone {
+            border: 2px dashed #0087F7;
+            border-radius: 5px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .drop-zone:hover {
+            background-color: #f8f9fa;
+        }
+        .drop-zone.dragover {
+            background-color: #e3f2fd;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Панель управления
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Пользователи
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Журнал доступа
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> Состояние системы
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Экспорт/Импорт
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Монитор аутентификации
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Упрощенное добавление пользователя</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <a href="{{ url_for('manage_users') }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> К списку пользователей
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+                
+                {% if success %}
+                <div class="alert alert-success">{{ success }}</div>
+                {% endif %}
+
+                <div class="card shadow form-card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-person-plus-fill"></i> Добавление пользователя</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{{ url_for('simple_add_user') }}" enctype="multipart/form-data" id="userForm">
+                            <div class="alert alert-info mb-4">
+                                <i class="bi bi-info-circle"></i> Введите ФИО пользователя и загрузите не менее 5 аудиозаписей его голоса в формате WAV. Система автоматически активирует пользователя после успешной обработки записей.
+                            </div>
+                            
+                            <div class="row g-3">
+                                <div class="col-md-12">
+                                    <div class="form-floating mb-3">
+                                        <input type="text" class="form-control" id="name" name="name" placeholder="ФИО пользователя" required>
+                                        <label for="name">ФИО пользователя</label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <label class="form-label"><i class="bi bi-mic-fill"></i> Загрузка аудиозаписей</label>
+                                
+                                <div class="drop-zone mb-3" id="dropZone">
+                                    <span class="drop-zone-prompt">
+                                        <i class="bi bi-cloud-arrow-up fs-2"></i><br>
+                                        Перетащите WAV-файлы сюда или нажмите для выбора
+                                    </span>
+                                    <input type="file" class="d-none" id="fileInput" name="audio_files" multiple accept=".wav">
+                                </div>
+                                
+                                <div id="audioPreview" class="mb-3">
+                                    <!-- Здесь будет отображаться предпросмотр файлов -->
+                                </div>
+                                
+                                <div class="form-text">
+                                    <i class="bi bi-exclamation-circle"></i> Требуется минимум 5 WAV-файлов для активации пользователя.
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                                <button type="reset" class="btn btn-outline-secondary me-2" onclick="clearFiles()">
+                                    <i class="bi bi-x"></i> Очистить
+                                </button>
+                                <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+                                    <i class="bi bi-check2"></i> Создать пользователя
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Переменная для хранения выбранных файлов
+        let selectedFiles = [];
+        
+        // Элементы DOM
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const audioPreview = document.getElementById('audioPreview');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        // Обработчики для Drag & Drop
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            
+            if (e.dataTransfer.files.length > 0) {
+                handleFiles(e.dataTransfer.files);
+            }
+        });
+        
+        // Обработчик выбора файлов через input
+        fileInput.addEventListener('change', () => {
+            handleFiles(fileInput.files);
+        });
+        
+        // Функция обработки выбранных файлов
+        function handleFiles(files) {
+            for (const file of files) {
+                // Проверяем, что файл - WAV
+                if (file.name.toLowerCase().endsWith('.wav')) {
+                    // Проверяем, нет ли уже такого файла
+                    const isDuplicate = selectedFiles.some(f => f.name === file.name && f.size === file.size);
+                    if (!isDuplicate) {
+                        selectedFiles.push(file);
+                    }
+                }
+            }
+            
+            // Обновляем отображение
+            updatePreview();
+        }
+        
+        // Функция обновления предпросмотра файлов
+        function updatePreview() {
+            audioPreview.innerHTML = '';
+            
+            selectedFiles.forEach((file, index) => {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'file-preview valid';
+                
+                fileDiv.innerHTML = `
+                    <div>
+                        <i class="bi bi-file-earmark-music"></i> 
+                        ${file.name} (${formatFileSize(file.size)})
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFile(${index})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                `;
+                
+                audioPreview.appendChild(fileDiv);
+            });
+            
+            // Обновляем состояние кнопки отправки
+            submitBtn.disabled = selectedFiles.length < 5;
+            
+            // Добавляем выбранные файлы в FormData
+            updateFormData();
+        }
+        
+        // Функция форматирования размера файла
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // Функция удаления файла
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updatePreview();
+        }
+        
+        // Функция очистки всех файлов
+        function clearFiles() {
+            selectedFiles = [];
+            updatePreview();
+            fileInput.value = '';
+        }
+        
+        // Функция обновления FormData перед отправкой
+        function updateFormData() {
+            const form = document.getElementById('userForm');
+            
+            // Перед отправкой формы добавляем выбранные файлы
+            form.onsubmit = function(e) {
+                if (selectedFiles.length < 5) {
+                    e.preventDefault();
+                    alert('Пожалуйста, добавьте не менее 5 аудиозаписей');
+                    return false;
+                }
+                
+                // Удаляем существующие файлы из input
+                while (fileInput.files.length > 0) {
+                    fileInput.value = '';
+                }
+                
+                // Создаем новый FileList-подобный объект
+                const dataTransfer = new DataTransfer();
+                
+                // Добавляем все выбранные файлы
+                selectedFiles.forEach(file => {
+                    dataTransfer.items.add(file);
+                });
+                
+                // Устанавливаем файлы в input
+                fileInput.files = dataTransfer.files;
+                
+                return true;
+            };
+        }
+    </script>
+</body>
+</html>

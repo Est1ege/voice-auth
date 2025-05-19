@@ -1,0 +1,447 @@
+<!-- web/templates/admin/filesystem_diagnosis.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File System Diagnostics - Voice Recognition System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .card-header {
+            border-top-left-radius: 8px !important;
+            border-top-right-radius: 8px !important;
+            font-weight: 600;
+        }
+        .table th {
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Recognition System</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Access Logs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">File System Diagnostics</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <a href="{{ url_for('system_status') }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Back to System Status
+                            </a>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="refreshBtn">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-hdd-rack"></i> File System Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="alert {% if fs_data.audio_path_exists %}alert-success{% else %}alert-danger{% endif %}">
+                                    <strong>Audio Files Directory:</strong> 
+                                    {{ fs_data.audio_path }}
+                                    {% if fs_data.audio_path_exists %}
+                                        <i class="bi bi-check-circle-fill text-success"></i>
+                                    {% else %}
+                                        <i class="bi bi-x-circle-fill text-danger"></i> Doesn't exist!
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="alert {% if fs_data.missing_files > 0 %}alert-warning{% else %}alert-success{% endif %}">
+                                    <strong>Total Audio Files:</strong> {{ fs_data.total_audio_files }} <br>
+                                    <strong>Missing Files:</strong> {{ fs_data.missing_files }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <h5 class="mt-4">User Directories</h5>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Directory</th>
+                                        <th>Status</th>
+                                        <th>Samples in DB</th>
+                                        <th>Files on Disk</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user_dir in fs_data.users_directories %}
+                                    <tr class="{% if not user_dir.directory_exists %}table-danger{% elif user_dir.sample_count_db != user_dir.sample_count_fs %}table-warning{% endif %}">
+                                        <td>{{ user_dir.name }}</td>
+                                        <td>{{ user_dir.directory_path }}</td>
+                                        <td>
+                                            {% if user_dir.directory_exists %}
+                                                <span class="badge bg-success">Exists</span>
+                                            {% else %}
+                                                <span class="badge bg-danger">Doesn't exist</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ user_dir.sample_count_db }}</td>
+                                        <td>{{ user_dir.sample_count_fs }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" 
+                                                    data-bs-toggle="collapse" 
+                                                    data-bs-target="#collapse{{ loop.index }}" 
+                                                    aria-expanded="false">
+                                                <i class="bi bi-list"></i> Details
+                                            </button>
+                                            <a href="{{ url_for('user_audio_diagnosis', user_id=user_dir.user_id) }}" class="btn btn-sm btn-outline-info">
+                                                <i class="bi bi-stethoscope"></i> Diagnose
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="6" class="p-0">
+                                            <div class="collapse" id="collapse{{ loop.index }}">
+                                                <div class="card card-body">
+                                                    <h6>User Files:</h6>
+                                                    {% if user_dir.files %}
+                                                        <div class="table-responsive">
+                                                            <table class="table table-sm">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Sample ID</th>
+                                                                        <th>Filename</th>
+                                                                        <th>DB Path</th>
+                                                                        <th>Status</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {% for file in user_dir.files %}
+                                                                    <tr class="{% if not file.exists and not file.get('alt_exists') %}table-danger{% endif %}">
+                                                                        <td>{{ file.sample_id }}</td>
+                                                                        <td>{{ file.filename }}</td>
+                                                                        <td>{{ file.db_path }}</td>
+                                                                        <td>
+                                                                            {% if file.exists %}
+                                                                                <span class="badge bg-success">Exists</span>
+                                                                            {% elif file.get('alt_exists') %}
+                                                                                <span class="badge bg-warning">Found at alternative path</span>
+                                                                            {% else %}
+                                                                                <span class="badge bg-danger">Not found</span>
+                                                                            {% endif %}
+                                                                        </td>
+                                                                    </tr>
+                                                                    {% endfor %}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    {% else %}
+                                                        <p>No file information</p>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Repair Tools Section -->
+                <div class="card shadow">
+                    <div class="card-header bg-warning">
+                        <h5 class="mb-0"><i class="bi bi-tools"></i> Repair Tools</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i> Warning! The following actions may modify the file system structure. It is recommended to create a backup before proceeding.
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-header">Fix Database Paths</div>
+                                    <div class="card-body">
+                                        <p>Updates file paths in the database, using alternative paths where possible.</p>
+                                        <button id="fixPathsBtn" class="btn btn-primary">
+                                            <i class="bi bi-wrench"></i> Fix Paths
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-header">Create Missing Directories</div>
+                                    <div class="card-body">
+                                        <p>Creates missing user directories.</p>
+                                        <button id="createMissingDirsBtn" class="btn btn-primary">
+                                            <i class="bi bi-folder-plus"></i> Create Directories
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mt-3">
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-header">Clean Inconsistent Data</div>
+                                    <div class="card-body">
+                                        <p>Removes database records of non-existent files.</p>
+                                        <button id="cleanupDataBtn" class="btn btn-danger">
+                                            <i class="bi bi-trash"></i> Clean Data
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-header">Regenerate Embeddings</div>
+                                    <div class="card-body">
+                                        <p>Recreates embeddings for all existing audio files.</p>
+                                        <button id="regenerateAllEmbeddingsBtn" class="btn btn-warning">
+                                            <i class="bi bi-arrow-repeat"></i> Regenerate All Embeddings
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Progress Modal -->
+    <div class="modal fade" id="progressModal" tabindex="-1" aria-labelledby="progressModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="progressModalLabel">Operation in Progress</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-3" id="progressMessage">
+                        Operation in progress, please wait...
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+        
+        // Refresh page
+        document.getElementById('refreshBtn').addEventListener('click', function() {
+            window.location.reload();
+        });
+        
+        // Fix paths in database
+        document.getElementById('fixPathsBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to fix file paths in the database?')) {
+                progressModal.show();
+                
+                fetch('/api/system/fix_file_paths', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    progressModal.hide();
+                    
+                    if (data.success) {
+                        alert(`Paths fixed successfully. Updated records: ${data.fixed_count}`);
+                        window.location.reload();
+                    } else {
+                        alert(`Error fixing paths: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    progressModal.hide();
+                    alert(`An error occurred: ${error}`);
+                });
+            }
+        });
+        
+        // Create missing directories
+        document.getElementById('createMissingDirsBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to create missing user directories?')) {
+                progressModal.show();
+                
+                fetch('/api/system/create_missing_dirs', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    progressModal.hide();
+                    
+                    if (data.success) {
+                        alert(`Directories created successfully. Created: ${data.created_count}`);
+                        window.location.reload();
+                    } else {
+                        alert(`Error creating directories: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    progressModal.hide();
+                    alert(`An error occurred: ${error}`);
+                });
+            }
+        });
+        
+        // Clean inconsistent data
+        document.getElementById('cleanupDataBtn').addEventListener('click', function() {
+            if (confirm('WARNING! This operation will delete database records of non-existent files. Continue?')) {
+                progressModal.show();
+                
+                fetch('/api/system/cleanup_data', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    progressModal.hide();
+                    
+                    if (data.success) {
+                        alert(`Data cleaned successfully. Removed records: ${data.removed_count}`);
+                        window.location.reload();
+                    } else {
+                        alert(`Error cleaning data: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    progressModal.hide();
+                    alert(`An error occurred: ${error}`);
+                });
+            }
+        });
+        
+        // Regenerate all embeddings
+        document.getElementById('regenerateAllEmbeddingsBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to regenerate embeddings for all audio files? This may take a long time.')) {
+                progressModal.show();
+                document.getElementById('progressMessage').textContent = 'Regenerating embeddings. This may take some time...';
+                
+                fetch('/api/system/regenerate_all_embeddings', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    progressModal.hide();
+                    
+                    if (data.success) {
+                        alert(`Embeddings regenerated successfully. Updated: ${data.updated_count}, errors: ${data.error_count}`);
+                        window.location.reload();
+                    } else {
+                        alert(`Error regenerating embeddings: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    progressModal.hide();
+                    alert(`An error occurred: ${error}`);
+                });
+            }
+        });
+    </script>
+</body>
+</html>

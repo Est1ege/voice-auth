@@ -1,0 +1,556 @@
+<!-- web/templates/admin/system_transfer.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Экспорт/Импорт системы - ГолосДоступ</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .transfer-card {
+            max-width: 900px;
+            margin: 0 auto 2rem auto;
+        }
+        .system-info {
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .system-info p {
+            margin-bottom: 0.5rem;
+        }
+        .export-form {
+            background-color: #e8f5e9;
+            border-radius: 4px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .import-form {
+            background-color: #fff3e0;
+            border-radius: 4px;
+            padding: 20px;
+        }
+        .drop-zone {
+            border: 2px dashed #ff9800;
+            border-radius: 5px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .drop-zone:hover {
+            background-color: #fff8e1;
+        }
+        .drop-zone.dragover {
+            background-color: #fffde7;
+        }
+        #importStatus, #exportStatus {
+            display: none;
+        }
+        .progress {
+            height: 20px;
+        }
+        .info-icon {
+            color: #007bff;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Панель управления
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Пользователи
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Журнал доступа
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> Состояние системы
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Экспорт/Импорт
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Монитор аутентификации
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Экспорт/Импорт системы</h1>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+                
+                {% if success %}
+                <div class="alert alert-success">{{ success }}</div>
+                {% endif %}
+
+                <!-- Информация о системе -->
+                <div class="card shadow transfer-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Информация о системе</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="system-info">
+                            <p><strong>Всего пользователей:</strong> <span id="usersCount">{{ system_info.users_count }}</span></p>
+                            <p><strong>Активных пользователей:</strong> <span id="activeUsersCount">{{ system_info.active_users_count }}</span></p>
+                            <p><strong>Всего голосовых образцов:</strong> <span id="samplesCount">{{ system_info.samples_count }}</span></p>
+                            <p><strong>Размер аудиофайлов:</strong> <span id="audioSize">{{ system_info.audio_size }}</span></p>
+                            <p><strong>Последнее обновление:</strong> <span id="lastUpdate">{{ system_info.last_update }}</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Экспорт системы -->
+                <div class="card shadow transfer-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-box-arrow-up"></i> Экспорт системы</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> Экспорт создаст полную резервную копию всей системы, включая пользователей, их голосовые образцы и настройки. Файл экспорта можно использовать для переноса системы на другой сервер или для резервного копирования.
+                        </div>
+                        
+                        <div class="export-form">
+                            <form method="post" action="{{ url_for('export_system') }}" id="exportForm">
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="includeAudio" name="include_audio" checked>
+                                        <label class="form-check-label" for="includeAudio">
+                                            Включить аудиофайлы
+                                        </label>
+                                    </div>
+                                    <div class="form-text">Если отключить, размер экспорта будет меньше, но без аудиофайлов.</div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="includeLogs" name="include_logs" checked>
+                                        <label class="form-check-label" for="includeLogs">
+                                            Включить журналы
+                                        </label>
+                                    </div>
+                                    <div class="form-text">История доступа и действий в системе.</div>
+                                </div>
+                                
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                    <button type="submit" class="btn btn-success" id="exportBtn">
+                                        <i class="bi bi-download"></i> Экспортировать систему
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <!-- Статус экспорта -->
+                            <div id="exportStatus" class="mt-4">
+                                <h5><i class="bi bi-arrow-repeat spin"></i> Экспорт системы...</h5>
+                                <div class="progress mb-3">
+                                    <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <div id="exportStatusText" class="text-muted">Подготовка данных...</div>
+                            </div>
+                        </div>
+                        
+                        {% if export_history %}
+                        <div class="mt-4">
+                            <h5>История экспорта</h5>
+                            <table class="table table-striped table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Дата</th>
+                                        <th>Размер</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for export in export_history %}
+                                    <tr>
+                                        <td>{{ export.date }}</td>
+                                        <td>{{ export.size }}</td>
+                                        <td>
+                                            <a href="{{ url_for('download_export', filename=export.filename) }}" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-download"></i> Скачать
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Импорт системы -->
+                <div class="card shadow transfer-card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0"><i class="bi bi-box-arrow-in-down"></i> Импорт системы</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>Внимание!</strong> Импорт полностью заменит текущие данные системы. Все существующие пользователи и их голосовые образцы будут перезаписаны. Рекомендуется сделать экспорт текущей системы перед импортом.
+                        </div>
+                        
+                        <div class="import-form">
+                            <form method="post" action="{{ url_for('import_system') }}" enctype="multipart/form-data" id="importForm">
+                                <div class="drop-zone mb-3" id="importDropZone">
+                                    <span class="drop-zone-prompt">
+                                        <i class="bi bi-cloud-arrow-up fs-2"></i><br>
+                                        Перетащите ZIP-файл экспорта сюда или нажмите для выбора
+                                    </span>
+                                    <input type="file" class="d-none" id="importInput" name="import_file" accept=".zip">
+                                </div>
+                                
+                                <div id="selectedImportFile" class="mb-3">
+                                    <!-- Здесь будет отображение выбранного файла -->
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="confirmImport" name="confirm_import">
+                                        <label class="form-check-label" for="confirmImport">
+                                            Я понимаю, что текущие данные будут заменены
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                    <button type="button" class="btn btn-outline-secondary me-2" onclick="clearImportFile()">
+                                        <i class="bi bi-x"></i> Очистить
+                                    </button>
+                                    <button type="submit" class="btn btn-warning" id="importBtn" disabled>
+                                        <i class="bi bi-upload"></i> Импортировать систему
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <!-- Статус импорта -->
+                            <div id="importStatus" class="mt-4">
+                                <h5><i class="bi bi-arrow-repeat spin"></i> Импорт системы...</h5>
+                                <div class="progress mb-3">
+                                    <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <div id="importStatusText" class="text-muted">Загрузка данных...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Элементы DOM для импорта
+        const importDropZone = document.getElementById('importDropZone');
+        const importInput = document.getElementById('importInput');
+        const selectedImportFile = document.getElementById('selectedImportFile');
+        const importBtn = document.getElementById('importBtn');
+        const confirmImport = document.getElementById('confirmImport');
+        const importStatus = document.getElementById('importStatus');
+        const importProgressBar = document.querySelector('#importStatus .progress-bar');
+        const importStatusText = document.getElementById('importStatusText');
+        
+        // Элементы DOM для экспорта
+        const exportForm = document.getElementById('exportForm');
+        const exportBtn = document.getElementById('exportBtn');
+        const exportStatus = document.getElementById('exportStatus');
+        const exportProgressBar = document.querySelector('#exportStatus .progress-bar');
+        const exportStatusText = document.getElementById('exportStatusText');
+        
+        // Обработчики для импорта
+        importDropZone.addEventListener('click', () => importInput.click());
+        
+        importDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            importDropZone.classList.add('dragover');
+        });
+        
+        importDropZone.addEventListener('dragleave', () => {
+            importDropZone.classList.remove('dragover');
+        });
+        
+        importDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            importDropZone.classList.remove('dragover');
+            
+            if (e.dataTransfer.files.length === 1 && e.dataTransfer.files[0].name.toLowerCase().endsWith('.zip')) {
+                handleImportFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        importInput.addEventListener('change', () => {
+            if (importInput.files.length === 1) {
+                handleImportFile(importInput.files[0]);
+            }
+        });
+        
+        confirmImport.addEventListener('change', () => {
+            updateImportButton();
+        });
+        
+        // Обработчики для экспорта
+        exportForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            // Показываем статус экспорта
+            exportStatus.style.display = 'block';
+            exportBtn.disabled = true;
+            
+            // Симулируем прогресс
+            simulateProgress(exportProgressBar, exportStatusText, [
+                'Подготовка данных...',
+                'Собираем информацию о пользователях...',
+                'Архивирование аудиофайлов...',
+                'Формирование архива...',
+                'Завершение экспорта...'
+            ], () => {
+                // После завершения прогресса выполняем фактический запрос
+                fetch("{{ url_for('export_system') }}", {
+                    method: 'POST',
+                    body: new FormData(exportForm)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = data.download_url;
+                        
+                        // Добавляем запись в историю экспорта (без перезагрузки страницы)
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        alert('Ошибка при экспорте: ' + data.message);
+                        exportStatus.style.display = 'none';
+                        exportBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка:', error);
+                    alert('Произошла ошибка при экспорте. Попробуйте снова.');
+                    exportStatus.style.display = 'none';
+                    exportBtn.disabled = false;
+                });
+            });
+        });
+        
+        // Обработчик отправки формы импорта
+        document.getElementById('importForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            if (!importInput.files[0] || !importInput.files[0].name.toLowerCase().endsWith('.zip')) {
+                alert('Пожалуйста, выберите ZIP-архив экспорта');
+                return;
+            }
+            
+            if (!confirmImport.checked) {
+                alert('Пожалуйста, подтвердите, что вы понимаете последствия импорта');
+                return;
+            }
+            
+            // Показываем статус импорта
+            importStatus.style.display = 'block';
+            importBtn.disabled = true;
+            
+            // Создаем FormData из формы
+            const formData = new FormData(document.getElementById('importForm'));
+            
+            // Симулируем прогресс
+            simulateProgress(importProgressBar, importStatusText, [
+                'Загрузка файла...',
+                'Проверка архива...',
+                'Распаковка данных...',
+                'Импорт пользователей...',
+                'Импорт аудиофайлов...',
+                'Обновление системы...'
+            ], () => {
+                // После завершения прогресса выполняем фактический запрос
+                fetch("{{ url_for('import_system') }}", {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Показываем сообщение об успехе
+                        alert('Импорт успешно завершен. Страница будет перезагружена.');
+                        
+                        // Перезагружаем страницу
+                        window.location.reload();
+                    } else {
+                        alert('Ошибка при импорте: ' + data.message);
+                        importStatus.style.display = 'none';
+                        importBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка:', error);
+                    alert('Произошла ошибка при импорте. Попробуйте снова.');
+                    importStatus.style.display = 'none';
+                    importBtn.disabled = false;
+                });
+            });
+        });
+        
+        // Функция обработки файла импорта
+        function handleImportFile(file) {
+            if (file && file.name.toLowerCase().endsWith('.zip')) {
+                selectedImportFile.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="bi bi-file-earmark-zip"></i> Выбран файл: ${file.name} (${formatFileSize(file.size)})
+                    </div>
+                `;
+                
+                // Обновляем состояние кнопки
+                updateImportButton();
+            } else {
+                selectedImportFile.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Пожалуйста, выберите ZIP-архив экспорта.
+                    </div>
+                `;
+                
+                importBtn.disabled = true;
+            }
+        }
+        
+        // Функция обновления состояния кнопки импорта
+        function updateImportButton() {
+            const fileSelected = importInput.files.length === 1 && importInput.files[0].name.toLowerCase().endsWith('.zip');
+            importBtn.disabled = !(fileSelected && confirmImport.checked);
+        }
+        
+        // Функция очистки файла импорта
+        function clearImportFile() {
+            importInput.value = '';
+            selectedImportFile.innerHTML = '';
+            importBtn.disabled = true;
+        }
+        
+        // Функция форматирования размера файла
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // Функция симуляции прогресса
+        function simulateProgress(progressBar, statusText, messages, callback) {
+            let progress = 0;
+            let messageIndex = 0;
+            
+            const interval = setInterval(() => {
+                progress += 5;
+                
+                if (progress > 100) {
+                    clearInterval(interval);
+                    
+                    // Вызываем callback после завершения анимации
+                    if (callback) {
+                        setTimeout(callback, 500);
+                    }
+                } else {
+                    progressBar.style.width = progress + '%';
+                    
+                    // Обновляем текст статуса в зависимости от прогресса
+                    if (messages && messages.length > 0) {
+                        const newIndex = Math.floor(progress / (100 / messages.length));
+                        if (newIndex !== messageIndex && newIndex < messages.length) {
+                            messageIndex = newIndex;
+                            statusText.textContent = messages[messageIndex];
+                        }
+                    }
+                }
+            }, 200);
+        }
+    </script>
+</body>
+</html>

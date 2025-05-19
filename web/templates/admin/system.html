@@ -1,0 +1,795 @@
+<!-- web/templates/admin/system.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Status - Voice Recognition System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .status-card {
+            transition: all 0.3s;
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .status-card:hover {
+            transform: translateY(-5px);
+        }
+        .status-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        .resource-usage {
+            height: 25px;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .card-header {
+            border-top-left-radius: 10px !important;
+            border-top-right-radius: 10px !important;
+            font-weight: 600;
+        }
+        .table {
+            margin-bottom: 0;
+        }
+        .table th {
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Recognition System</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Access Logs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Auth Monitor
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">System Status</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="refreshStatusBtn">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <a href="{{ url_for('filesystem_diagnosis') }}" class="btn btn-info mb-4">
+                    <i class="bi bi-hdd-rack"></i> File System Diagnostics
+                </a>
+                
+                <div class="row mb-4">
+                    <!-- API Service Status -->
+                    <div class="col-md-3 mb-4">
+                        <div class="card status-card shadow h-100">
+                            <div class="card-body text-center">
+                                <div class="status-icon">
+                                    {% if status.api_status == 'ok' %}
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    {% else %}
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                    {% endif %}
+                                </div>
+                                <h5 class="card-title">API Service</h5>
+                                <p class="card-text">
+                                    {% if status.api_status == 'ok' %}
+                                    Working normally
+                                    {% else %}
+                                    Needs attention
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- ML Service Status -->
+                    <div class="col-md-3 mb-4">
+                        <div class="card status-card shadow h-100">
+                            <div class="card-body text-center">
+                                <div class="status-icon">
+                                    {% if status.ml_status == 'ok' %}
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    {% else %}
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                    {% endif %}
+                                </div>
+                                <h5 class="card-title">ML Service</h5>
+                                <p class="card-text">
+                                    {% if status.ml_status == 'ok' %}
+                                    Working normally
+                                    {% else %}
+                                    Needs attention
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Database Status -->
+                    <div class="col-md-3 mb-4">
+                        <div class="card status-card shadow h-100">
+                            <div class="card-body text-center">
+                                <div class="status-icon">
+                                    {% if status.db_status == 'ok' %}
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    {% else %}
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                    {% endif %}
+                                </div>
+                                <h5 class="card-title">Database</h5>
+                                <p class="card-text">
+                                    {% if status.db_status == 'ok' %}
+                                    Connected
+                                    {% else %}
+                                    Connection error
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Overall System Status -->
+                    <div class="col-md-3 mb-4">
+                        <div class="card status-card shadow h-100">
+                            <div class="card-body text-center">
+                                <div class="status-icon">
+                                    {% if status.api_status == 'ok' and status.ml_status == 'ok' and status.db_status == 'ok' %}
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    {% else %}
+                                    <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                    {% endif %}
+                                </div>
+                                <h5 class="card-title">Overall Status</h5>
+                                <p class="card-text">
+                                    {% if status.api_status == 'ok' and status.ml_status == 'ok' and status.db_status == 'ok' %}
+                                    System functioning normally
+                                    {% else %}
+                                    Administrator attention required
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <!-- User Information -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card shadow">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0"><i class="bi bi-people-fill"></i> System Users</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card border-0 bg-light">
+                                            <div class="card-body text-center">
+                                                <h1 class="display-4">{{ status.users_count }}</h1>
+                                                <p class="lead">Total Users</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card border-0 bg-light">
+                                            <div class="card-body text-center">
+                                                <h1 class="display-4">{{ status.active_users_count }}</h1>
+                                                <p class="lead">Active Users</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <h6 class="mt-3">Activation Status</h6>
+                                <div class="progress mb-4 resource-usage">
+                                    <div class="progress-bar bg-success" role="progressbar" 
+                                        style="width: {{ (status.active_users_count / status.users_count * 100) if status.users_count > 0 else 0 }}%" 
+                                        aria-valuenow="{{ status.active_users_count }}" 
+                                        aria-valuemin="0" 
+                                        aria-valuemax="{{ status.users_count }}">
+                                        {{ "%.1f"|format(status.active_users_count / status.users_count * 100) if status.users_count > 0 else 0 }}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- System Information and Resources -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card shadow">
+                            <div class="card-header bg-info text-white">
+                                <h5 class="mb-0"><i class="bi bi-cpu-fill"></i> System Information</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>Computing Resources</h6>
+                                        <ul class="list-group list-group-flush mb-3">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Device:</span>
+                                                <span class="badge bg-primary">{{ status.device }}</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>API Version:</span>
+                                                <span>{{ status.api_version }}</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Models Status:</span>
+                                                <span class="badge bg-success">Loaded</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>Storage Usage</h6>
+                                        <ul class="list-group list-group-flush">
+                                            <li class="list-group-item">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span>Audio Files:</span>
+                                                    <small>{{ status.storage.audio_used if status.storage is defined else 'N/A' }} / {{ status.storage.audio_total if status.storage is defined else 'N/A' }}</small>
+                                                </div>
+                                                <div class="progress resource-usage">
+                                                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ status.storage.audio_percent }}%" aria-valuenow="{{ status.storage.audio_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                                                </div>
+                                            </li>
+                                            <li class="list-group-item">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span>Database:</span>
+                                                    <small>{{ status.storage.db_used }} / {{ status.storage.db_total }}</small>
+                                                </div>
+                                                <div class="progress resource-usage">
+                                                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ status.storage.db_percent }}%" aria-valuenow="{{ status.storage.db_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                                                </div>
+                                            </li>
+                                            <li class="list-group-item">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span>ML Models:</span>
+                                                    <small>{{ status.storage.ml_used }} / {{ status.storage.ml_total }}</small>
+                                                </div>
+                                                <div class="progress resource-usage">
+                                                    <div class="progress-bar {% if status.storage.ml_percent > 15 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ status.storage.ml_percent }}%" aria-valuenow="{{ status.storage.ml_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                                                </div>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Добавьте эту карточку после блока "User Information" и "System Information" -->
+<!-- Вставить после закрывающего тега </div> для строки "row" с классами "col-md-6" -->
+
+<!-- System Management Card -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-warning text-white">
+        <h5 class="mb-0"><i class="bi bi-tools"></i> System Management</h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-warning">
+            <strong>Warning!</strong> The following actions can affect system operation. Use them only when necessary.
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="card border-0 bg-light">
+                    <div class="card-header">System Reinitialization</div>
+                    <div class="card-body">
+                        <p>Reinitializes ML service components and reloads user data. Use this if the system is experiencing matching issues.</p>
+                        
+                        <!-- Flash Messages for Reinitialization -->
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                    {% if 'reinitial' in message.lower() %}
+                                        <div class="alert alert-{{ category }} mb-3">
+                                            {{ message }}
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+                        
+                        <form action="/admin/system/reinitialize" method="post" id="reinitializeForm">
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-arrow-repeat"></i> Reinitialize System
+                            </button>
+                        </form>
+                        
+                        <!-- Progress indicator (hidden by default) -->
+                        <div id="reinitialization-progress" style="display: none;" class="mt-3">
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                            </div>
+                            <p class="text-center mt-2">System reinitialization in progress, please wait...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 mb-3">
+                <div class="card border-0 bg-light">
+                    <div class="card-header">Thresholds Configuration</div>
+                    <div class="card-body">
+                        <p>Adjust voice matching and anti-spoofing thresholds.</p>
+                        <div class="mb-3">
+                            <label class="form-label">Matching Threshold</label>
+                            <select class="form-select" id="matchingThreshold">
+                                <option value="0.5">0.5 - Very Permissive</option>
+                                <option value="0.6">0.6 - Permissive</option>
+                                <option value="0.7" selected>0.7 - Balanced</option>
+                                <option value="0.8">0.8 - Strict</option>
+                                <option value="0.9">0.9 - Very Strict</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Anti-Spoofing Threshold</label>
+                            <select class="form-select" id="spoofingThreshold">
+                                <option value="0.3">0.3 - Less Sensitive</option>
+                                <option value="0.5">0.5 - Balanced</option>
+                                <option value="0.7" selected>0.7 - More Sensitive</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="saveThresholdsBtn">
+                            <i class="bi bi-save"></i> Save Thresholds
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+                <!-- Docker Containers -->
+                <div class="card shadow mb-4">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-boxes"></i> Docker Containers</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Container Name</th>
+                                        <th scope="col">Status</th>
+                                        <th scope="col">CPU</th>
+                                        <th scope="col">Memory</th>
+                                        <th scope="col">Network</th>
+                                        <th scope="col">Uptime</th>
+                                        <th scope="col">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for container in status.containers %}
+                                    <tr>
+                                        <td>{{ container.name }}</td>
+                                        <td><span class="badge {% if container.status == 'Running' %}bg-success{% else %}bg-danger{% endif %}">{{ container.status }}</span></td>
+                                        <td>{{ container.cpu }}</td>
+                                        <td>{{ container.memory }}</td>
+                                        <td>{{ container.network }}</td>
+                                        <td>{{ container.uptime }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-secondary" data-container="{{ container.name }}" data-action="restart"><i class="bi bi-arrow-repeat"></i></button>
+                                            <button class="btn btn-sm btn-outline-warning" data-container="{{ container.name }}" data-action="stop"><i class="bi bi-stop-fill"></i></button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Backup System -->
+                <div class="card shadow mb-4">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="bi bi-save"></i> Backups</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-7">
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Creation Date</th>
+                                                <th>Type</th>
+                                                <th>Size</th>
+                                                <th>Status</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for backup in status.backups %}
+                                            <tr>
+                                                <td>{{ backup.date }}</td>
+                                                <td>{{ backup.type }}</td>
+                                                <td>{{ backup.size }}</td>
+                                                <td><span class="badge {% if backup.status == 'Success' %}bg-success{% else %}bg-danger{% endif %}">{{ backup.status }}</span></td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-primary" data-backup="{{ backup.id }}" data-action="download"><i class="bi bi-download"></i></button>
+                                                    <button class="btn btn-sm btn-outline-success" data-backup="{{ backup.id }}" data-action="restore"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="card border-0 bg-light mb-3">
+                                    <div class="card-body">
+                                        <h5 class="card-title">Backup Settings</h5>
+                                        <p class="card-text">Current schedule: <strong>{{ status.backup_schedule }}</strong></p>
+                                        <div class="mb-3">
+                                            <label class="form-label">Backup Type</label>
+                                            <select class="form-select" id="backupType">
+                                                <option value="full" selected>Full</option>
+                                                <option value="incremental">Incremental</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Storage</label>
+                                            <select class="form-select" id="backupStorage">
+                                                <option value="local" selected>Local</option>
+                                                <option value="cloud">Cloud</option>
+                                            </select>
+                                        </div>
+                                        <div class="d-grid">
+                                            <button class="btn btn-primary" id="saveBackupSettingsBtn">Save Settings</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-primary" id="createBackupNowBtn">
+                                        <i class="bi bi-cloud-upload"></i> Create Backup Now
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Script to refresh system status
+        document.getElementById('refreshStatusBtn').addEventListener('click', function() {
+            location.reload();
+        });
+        
+        // Container actions
+        document.querySelectorAll('[data-action="restart"], [data-action="stop"]').forEach(button => {
+            button.addEventListener('click', function() {
+                const container = this.getAttribute('data-container');
+                const action = this.getAttribute('data-action');
+                
+                if (confirm(`Are you sure you want to ${action} the container ${container}?`)) {
+                    fetch(`/api/system/container/${action}/${container}`, {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(`Container ${container} ${action} request sent successfully.`);
+                            setTimeout(() => location.reload(), 2000);
+                        } else {
+                            alert(`Error: ${data.message}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error(`Error ${action}ing container:`, error);
+                        alert(`An error occurred while trying to ${action} the container.`);
+                    });
+                }
+            });
+        });
+        
+        // Backup actions
+        document.querySelectorAll('[data-action="download"], [data-action="restore"]').forEach(button => {
+            button.addEventListener('click', function() {
+                const backupId = this.getAttribute('data-backup');
+                const action = this.getAttribute('data-action');
+                
+                if (action === 'download') {
+                    window.location.href = `/api/system/backup/download/${backupId}`;
+                } else if (action === 'restore') {
+                    if (confirm(`Are you sure you want to restore the system from backup ${backupId}? This will replace current data.`)) {
+                        fetch(`/api/system/backup/restore/${backupId}`, {
+                            method: 'POST'
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert('Restore process started. The system may be temporarily unavailable.');
+                            } else {
+                                alert(`Error: ${data.message}`);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error restoring backup:', error);
+                            alert('An error occurred while trying to restore the backup.');
+                        });
+                    }
+                }
+            });
+        });
+        
+        // Save backup settings
+        document.getElementById('saveBackupSettingsBtn').addEventListener('click', function() {
+            const backupType = document.getElementById('backupType').value;
+            const backupStorage = document.getElementById('backupStorage').value;
+            
+            fetch('/api/system/backup/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    type: backupType,
+                    storage: backupStorage
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Backup settings saved successfully.');
+                } else {
+                    alert(`Error: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error saving backup settings:', error);
+                alert('An error occurred while trying to save backup settings.');
+            });
+        });
+        
+        // Create backup now
+        document.getElementById('createBackupNowBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to create a backup now?')) {
+                this.disabled = true;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating backup...';
+                
+                fetch('/api/system/backup/create', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-cloud-upload"></i> Create Backup Now';
+                    
+                    if (data.success) {
+                        alert('Backup created successfully.');
+                        location.reload();
+                    } else {
+                        alert(`Error: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error creating backup:', error);
+                    alert('An error occurred while trying to create a backup.');
+                    
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-cloud-upload"></i> Create Backup Now';
+                });
+            }
+        });
+    </script>
+    <!-- Добавьте этот скрипт перед закрывающим тегом </body> -->
+<script>
+    // Обработчик формы переинициализации
+    document.addEventListener('DOMContentLoaded', function() {
+        const reinitForm = document.getElementById('reinitializeForm');
+        
+        if (reinitForm) {
+            reinitForm.addEventListener('submit', function(e) {
+                if (confirm('Are you sure you want to reinitialize the system? This may take some time.')) {
+                    // Показываем индикатор прогресса
+                    const progressContainer = document.getElementById('reinitialization-progress');
+                    progressContainer.style.display = 'block';
+                    
+                    // Блокируем кнопку
+                    const submitButton = this.querySelector('button[type="submit"]');
+                    submitButton.disabled = true;
+                    
+                    // Продолжаем отправку формы
+                    return true;
+                } else {
+                    // Отменяем отправку формы
+                    e.preventDefault();
+                    return false;
+                }
+            });
+        }
+    });
+    
+    // Сохранение порогов
+    document.getElementById('saveThresholdsBtn').addEventListener('click', function() {
+        const matchingThreshold = document.getElementById('matchingThreshold').value;
+        const spoofingThreshold = document.getElementById('spoofingThreshold').value;
+        
+        // Блокируем кнопку на время запроса
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+        
+        fetch('/api/system/thresholds', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                matching_threshold: matchingThreshold,
+                spoofing_threshold: spoofingThreshold
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-save"></i> Save Thresholds';
+            
+            if (data.success) {
+                alert('Thresholds saved successfully.');
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving thresholds:', error);
+            alert('An error occurred while trying to save thresholds.');
+            
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-save"></i> Save Thresholds';
+        });
+    });
+    
+    // Отслеживание статуса переинициализации (опционально)
+    function trackReinitializationStatus() {
+        const progressContainer = document.getElementById('reinitialization-progress');
+        if (!progressContainer || progressContainer.style.display === 'none') return;
+        
+        const progressBar = progressContainer.querySelector('.progress-bar');
+        const statusText = progressContainer.querySelector('p');
+        
+        // Проверяем статус раз в секунду
+        const checkStatus = () => {
+            fetch('/api/system/reinitialize/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.in_progress) {
+                        // Обновляем прогресс
+                        progressBar.style.width = `${data.progress * 100}%`;
+                        statusText.textContent = `Reinitialization: ${data.current_step || 'in progress'} (${Math.round(data.progress * 100)}%)`;
+                        // Повторяем проверку через 1 секунду
+                        setTimeout(checkStatus, 1000);
+                    } else if (data.status === 'completed') {
+                        // Успешное завершение
+                        progressBar.classList.remove('progress-bar-animated');
+                        progressBar.classList.add('bg-success');
+                        progressBar.style.width = '100%';
+                        statusText.textContent = 'Reinitialization completed successfully!';
+                        // Перезагружаем страницу через 2 секунды
+                        setTimeout(() => window.location.reload(), 2000);
+                    } else {
+                        // Ошибка при переинициализации
+                        progressBar.classList.remove('progress-bar-animated');
+                        progressBar.classList.add('bg-danger');
+                        progressBar.style.width = '100%';
+                        statusText.textContent = `Reinitialization error: ${data.error || 'unknown error'}`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error getting reinitialization status:', error);
+                    progressBar.classList.add('bg-danger');
+                    statusText.textContent = 'Error getting reinitialization status';
+                });
+        };
+        
+        // Запускаем проверку статуса
+        checkStatus();
+    }
+    
+    // Запускаем отслеживание статуса, если форма была отправлена
+    document.addEventListener('DOMContentLoaded', function() {
+        if (document.getElementById('reinitialization-progress').style.display !== 'none') {
+            trackReinitializationStatus();
+        }
+    });
+</script>
+</body>
+</html>

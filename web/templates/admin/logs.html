@@ -1,0 +1,416 @@
+<!-- web/templates/admin/logs.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Журнал доступа - ГолосДоступ</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .filter-bar {
+            background-color: #f8f9fa;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .log-details {
+            max-width: 350px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Панель управления
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Пользователи
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Журнал доступа
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> Состояние системы
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Монитор аутентификации
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Журнал доступа</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#exportModal">
+                                <i class="bi bi-download"></i> Экспорт
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearLogsModal">
+                                <i class="bi bi-trash"></i> Очистить журнал
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-bar shadow-sm">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="logSearch" placeholder="Поиск в журнале...">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select" id="eventTypeFilter">
+                                <option value="">Все типы событий</option>
+                                <option value="authorization_successful">Успешная авторизация</option>
+                                <option value="authorization_attempt">Попытка авторизации</option>
+                                <option value="spoofing_attempt">Попытка спуфинга</option>
+                                <option value="user_created">Создание пользователя</option>
+                                <option value="user_activated">Активация пользователя</option>
+                                <option value="voice_sample_added">Добавление голосового образца</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select" id="statusFilter">
+                                <option value="">Все статусы</option>
+                                <option value="true">Успешно</option>
+                                <option value="false">Отказано</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary w-100" id="applyFilters">
+                                <i class="bi bi-funnel"></i> Применить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold">События доступа</h6>
+                        <span class="badge bg-secondary">{{ logs|length if logs else 0 }} записей</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover mb-0" id="logsTable">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Дата и время</th>
+                                        <th scope="col">Тип события</th>
+                                        <th scope="col">Пользователь</th>
+                                        <th scope="col">Статус</th>
+                                        <th scope="col">Детали</th>
+                                        <th scope="col">IP-адрес</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if logs %}
+                                        {% for log in logs %}
+                                        <tr>
+                                            <td>{{ log.timestamp|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') }}</td>
+                                            <td>
+                                                {% if log.event_type == 'authorization_successful' %}
+                                                <span class="badge bg-success">Успешная авторизация</span>
+                                                {% elif log.event_type == 'authorization_attempt' %}
+                                                <span class="badge bg-warning text-dark">Попытка авторизации</span>
+                                                {% elif log.event_type == 'spoofing_attempt' %}
+                                                <span class="badge bg-danger">Попытка спуфинга</span>
+                                                {% elif log.event_type == 'user_created' %}
+                                                <span class="badge bg-info">Создание пользователя</span>
+                                                {% elif log.event_type == 'user_activated' %}
+                                                <span class="badge bg-primary">Активация пользователя</span>
+                                                {% elif log.event_type == 'voice_sample_added' %}
+                                                <span class="badge bg-secondary">Добавление голосового образца</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">{{ log.event_type }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ log.user_name if log.user_name else "—" }}</td>
+                                            <td>
+                                                {% if log.success %}
+                                                <span class="badge bg-success">Успешно</span>
+                                                {% else %}
+                                                <span class="badge bg-danger">Отказано</span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="log-details" title="{{ log.details|tojson }}">
+                                                {% if log.details %}
+                                                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#detailsModal" data-details="{{ log.details|tojson }}">
+                                                    <i class="bi bi-info-circle"></i> Подробности
+                                                </button>
+                                                {% else %}
+                                                —
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ log.ip_address if log.ip_address else "—" }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="6" class="text-center py-3">Журнал пуст</td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Пагинация -->
+                <nav aria-label="Page navigation">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" tabindex="-1" aria-disabled="true">Предыдущая</a>
+                        </li>
+                        <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                        <li class="page-item"><a class="page-link" href="#">2</a></li>
+                        <li class="page-item"><a class="page-link" href="#">3</a></li>
+                        <li class="page-item">
+                            <a class="page-link" href="#">Следующая</a>
+                        </li>
+                    </ul>
+                </nav>
+            </main>
+        </div>
+    </div>
+
+    <!-- Модальное окно с деталями события -->
+    <div class="modal fade" id="detailsModal" tabindex="-1" aria-labelledby="detailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailsModalLabel">Детали события</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <pre id="detailsContent" class="bg-light p-3 rounded"></pre>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно экспорта журнала -->
+    <div class="modal fade" id="exportModal" tabindex="-1" aria-labelledby="exportModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exportModalLabel">Экспорт журнала</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form>
+                        <div class="mb-3">
+                            <label class="form-label">Формат файла</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="exportFormat" id="formatCSV" value="csv" checked>
+                                <label class="form-check-label" for="formatCSV">CSV</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="exportFormat" id="formatJSON" value="json">
+                                <label class="form-check-label" for="formatJSON">JSON</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="dateRange" class="form-label">Диапазон дат</label>
+                            <select class="form-select" id="dateRange">
+                                <option value="all">Все записи</option>
+                                <option value="today">Сегодня</option>
+                                <option value="week">Последняя неделя</option>
+                                <option value="month">Последний месяц</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary">Экспортировать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно очистки журнала -->
+    <div class="modal fade" id="clearLogsModal" tabindex="-1" aria-labelledby="clearLogsModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="clearLogsModalLabel">Очистка журнала</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Вы уверены, что хотите очистить журнал доступа? Это действие нельзя отменить.
+                    </div>
+                    <div class="mb-3">
+                        <label for="clearLogsRange" class="form-label">Период очистки</label>
+                        <select class="form-select" id="clearLogsRange">
+                            <option value="older_than_month">Старше месяца</option>
+                            <option value="older_than_week">Старше недели</option>
+                            <option value="all">Все записи</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-danger">Очистить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Скрипт для отображения деталей события в модальном окне
+        var detailsModal = document.getElementById('detailsModal')
+        detailsModal.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget
+            var details = button.getAttribute('data-details')
+            var detailsContent = document.getElementById('detailsContent')
+            
+            try {
+                // Преобразуем JSON строку в объект и форматируем для отображения
+                var detailsObj = JSON.parse(details)
+                detailsContent.textContent = JSON.stringify(detailsObj, null, 2)
+            } catch (e) {
+                detailsContent.textContent = details
+            }
+        })
+        
+        // Скрипт для фильтрации журнала
+        document.getElementById('applyFilters').addEventListener('click', function() {
+            var input = document.getElementById('logSearch')
+            var filter = input.value.toUpperCase()
+            var eventTypeFilter = document.getElementById('eventTypeFilter').value
+            var statusFilter = document.getElementById('statusFilter').value
+            
+            var table = document.getElementById('logsTable')
+            var tr = table.getElementsByTagName('tr')
+            
+            for (var i = 1; i < tr.length; i++) {
+                var showRow = true
+                
+                // Проверка текстового фильтра
+                if (filter) {
+                    var txtFound = false
+                    var td = tr[i].getElementsByTagName('td')
+                    
+                    for (var j = 0; j < td.length; j++) {
+                        if (td[j].textContent.toUpperCase().indexOf(filter) > -1) {
+                            txtFound = true
+                            break
+                        }
+                    }
+                    
+                    if (!txtFound) {
+                        showRow = false
+                    }
+                }
+                
+                // Проверка фильтра по типу события
+                if (showRow && eventTypeFilter) {
+                    var eventTypeCell = tr[i].getElementsByTagName('td')[1]
+                    if (!eventTypeCell.textContent.includes(eventTypeFilter)) {
+                        showRow = false
+                    }
+                }
+                
+                // Проверка фильтра по статусу
+                if (showRow && statusFilter) {
+                    var statusCell = tr[i].getElementsByTagName('td')[3]
+                    var isSuccess = statusCell.textContent.includes('Успешно')
+                    
+                    if ((statusFilter === 'true' && !isSuccess) || 
+                        (statusFilter === 'false' && isSuccess)) {
+                        showRow = false
+                    }
+                }
+                
+                tr[i].style.display = showRow ? '' : 'none'
+            }
+        })
+    </script>
+</body>
+</html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система голосовой аутентификации</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.6.2/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 0;
+            margin: 0;
+        }
+        .header {
+            background-color: #343a40;
+            color: white;
+            padding: 15px 0;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+        .auth-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        .status-display {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status-text {
+            font-size: 18px;
+            color: #6c757d;
+            margin-top: 10px;
+        }
+        .mic-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .mic-indicator {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background-color: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .mic-indicator.listening {
+            background-color: #28a745;
+            animation: pulse 1.5s infinite;
+        }
+        .mic-indicator.processing {
+            background-color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+        .mic-indicator svg {
+            width: 50px;
+            height: 50px;
+            fill: #6c757d;
+        }
+        .mic-indicator.listening svg,
+        .mic-indicator.processing svg {
+            fill: white;
+        }
+        .audio-levels {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            height: 60px;
+            width: 200px;
+            margin: 20px 0;
+        }
+        .audio-level-bar {
+            width: 5px;
+            background-color: #007bff;
+            margin: 0 2px;
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+        .result-container {
+            display: none;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            margin-top: 30px;
+            transition: all 0.3s ease;
+        }
+        .result-container.authorized {
+            border-left: 5px solid #28a745;
+        }
+        .result-container.denied {
+            border-left: 5px solid #dc3545;
+        }
+        .result-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .result-photo {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 20px;
+            border: 3px solid #e9ecef;
+        }
+        .user-details {
+            flex: 1;
+        }
+        .user-name {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .user-info {
+            color: #6c757d;
+            margin-bottom: 3px;
+        }
+        .match-score {
+            font-size: 14px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .match-score.high {
+            background-color: #d4edda;
+            color: #28a745;
+        }
+        .match-score.medium {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .match-score.low {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .access-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        .access-badge.authorized {
+            background-color: #28a745;
+            color: white;
+        }
+        .access-badge.denied {
+            background-color: #dc3545;
+            color: white;
+        }
+        .control-panel {
+            margin-top: 30px;
+            display: flex;
+            justify-content: center;
+        }
+        .timer {
+            font-size: 16px;
+            color: #6c757d;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .auth-info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .auth-info p {
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .system-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-indicator.online {
+            background-color: #28a745;
+        }
+        .status-indicator.offline {
+            background-color: #dc3545;
+        }
+        .anti-spoof-badge {
+            background-color: #17a2b8;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+            }
+            70% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+            }
+        }
+        /* Скрытые элементы */
+        .recordings-section {
+            display: none;
+        }
+        #saveRecordingButton {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>Система голосовой аутентификации</h1>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="auth-container">
+            <div class="status-display">
+                <h2 id="statusTitle">Готов к работе</h2>
+                <p id="statusText" class="status-text">Для авторизации нажмите кнопку "Начать запись" и произнесите контрольную фразу</p>
+                <div class="system-status">
+                    <div id="systemStatusIndicator" class="status-indicator online"></div>
+                    <span id="systemStatusText">Система онлайн</span>
+                    <span class="anti-spoof-badge">Анти-спуфинг активен</span>
+                </div>
+            </div>
+
+            <div class="auth-info">
+                <p><strong>Информация о системе:</strong></p>
+                <p>Текущий порог распознавания: 0.7 (70%)</p>
+                <p>Режим сохранения аудио: отключен</p>
+                <p>Защита от имитации голоса: включена</p>
+            </div>
+
+            <div class="mic-container">
+                <div id="micIndicator" class="mic-indicator">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                </div>
+
+                <div class="audio-levels" id="audioLevels">
+                    <!-- Динамические полоски уровня аудио будут добавлены через JavaScript -->
+                </div>
+
+                <div class="timer" id="timer">00:00</div>
+            </div>
+
+            <div id="resultContainer" class="result-container">
+                <div class="result-header">
+                    <img id="userPhoto" src="/static/img/default-user.jpg" alt="Фото пользователя" class="result-photo">
+                    <div class="user-details">
+                        <div id="userName" class="user-name">Имя пользователя</div>
+                        <div id="userDepartment" class="user-info">Отдел: -</div>
+                        <div id="userPosition" class="user-info">Должность: -</div>
+                        <div id="matchScore" class="match-score">Совпадение: 0%</div>
+                    </div>
+                </div>
+
+                <div id="accessBadgeContainer" class="text-center">
+                    <div id="accessBadge" class="access-badge">Доступ: Ожидание</div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <button id="recordButton" class="btn btn-primary mr-3">Начать запись</button>
+                <button id="stopButton" class="btn btn-secondary mr-3" disabled>Остановить</button>
+                <button id="saveRecordingButton" class="btn btn-success mr-3" disabled>Сохранить запись</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center py-3 text-muted">
+        <div class="container">
+            <p>© 2025 Система голосовой аутентификации</p>
+        </div>
+    </footer>
+
+    <!-- Аудиофайлы для уведомлений -->
+    <audio id="successSound" src="/static/sounds/success.mp3" preload="auto"></audio>
+    <audio id="failureSound" src="/static/sounds/failure.mp3" preload="auto"></audio>
+    <audio id="startListeningSound" src="/static/sounds/start_listening.mp3" preload="auto"></audio>
+
+    <!-- Скрипты -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="/static/js/voice-auth.js"></script>
+</body>
+</html>

@@ -1,0 +1,425 @@
+<!-- web/templates/admin/enroll_voice.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Enrollment - Voice Recognition System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .record-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: #dc3545;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            margin: 0 auto;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .record-button.recording {
+            animation: pulse 1.5s infinite;
+        }
+        .record-button i {
+            font-size: 2rem;
+            color: white;
+        }
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+            }
+            70% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+            }
+        }
+        .progress-wrapper {
+            max-width: 600px;
+            margin: 2rem auto;
+        }
+        .phrase-card {
+            max-width: 600px;
+            margin: 2rem auto;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        .user-photo {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 5px solid #eee;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Recognition System</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Access Logs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Auth Monitor
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">User Voice Enrollment</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <a href="{{ url_for('manage_users') }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Back to Users
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row justify-content-center">
+                    <div class="col-lg-8">
+                        <div class="card shadow mb-4">
+                            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                                <h6 class="m-0 font-weight-bold text-primary">User: {{ user.name }}</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="progress-wrapper">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span>Voice enrollment progress</span>
+                                        <span>{{ progress }} / {{ total_required }}</span>
+                                    </div>
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ (progress / total_required) * 100 }}%;" 
+                                            aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="{{ total_required }}">
+                                            {{ progress }} / {{ total_required }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="phrase-card">
+                                    <div class="card">
+                                        <div class="card-body">
+                                            <h5 class="card-title">Phrase to pronounce</h5>
+                                            <p class="card-text" id="phrase-text">My voice is my password for system access.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="text-center my-4">
+                                    <div class="record-button" id="recordButton">
+                                        <i class="bi bi-mic-fill"></i>
+                                    </div>
+                                    <p class="mt-2" id="recordStatus">Click to start recording</p>
+                                </div>
+
+                                <div class="audio-preview mt-4 d-none" id="audioPreview">
+                                    <h5>Preview recording</h5>
+                                    <audio controls id="audioPlayer" class="w-100"></audio>
+                                    <div class="d-flex justify-content-end mt-2">
+                                        <button class="btn btn-danger me-2" id="discardButton">Discard</button>
+                                        <button class="btn btn-success" id="saveButton">Save</button>
+                                    </div>
+                                </div>
+
+                                {% if progress >= total_required %}
+                                <div class="text-center mt-4">
+                                    <button class="btn btn-primary" id="activateButton">Activate User</button>
+                                </div>
+                                {% endif %}
+
+                                <div class="alert alert-info mt-4">
+                                    <h5>Recording Instructions</h5>
+                                    <ol>
+                                        <li>Ensure your environment is quiet with no background noise</li>
+                                        <li>Click the record button and say the displayed phrase</li>
+                                        <li>Speak clearly and naturally</li>
+                                        <li>Listen to the recording before saving</li>
+                                        <li>Repeat the process until you record {{ total_required }} samples</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card shadow mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0">User Photo</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4 text-center">
+                                        <img src="{{ url_for('api_proxy', subpath='users/' + user.id + '/photo') }}" 
+                                            alt="User Photo" 
+                                            class="user-photo mb-3">
+                                    </div>
+                                    <div class="col-md-8">
+                                        <form action="{{ url_for('upload_user_photo', user_id=user.id) }}" method="post" enctype="multipart/form-data">
+                                            <div class="mb-3">
+                                                <label for="photoFile" class="form-label">Upload New Photo</label>
+                                                <input class="form-control" type="file" id="photoFile" name="photo" accept="image/jpeg,image/png">
+                                                <div class="form-text">Recommended size: 300x300 pixels, JPG or PNG format</div>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary">
+                                                <i class="bi bi-upload"></i> Upload Photo
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const recordButton = document.getElementById('recordButton');
+            const recordStatus = document.getElementById('recordStatus');
+            const audioPreview = document.getElementById('audioPreview');
+            const audioPlayer = document.getElementById('audioPlayer');
+            const discardButton = document.getElementById('discardButton');
+            const saveButton = document.getElementById('saveButton');
+            const activateButton = document.getElementById('activateButton');
+            const phraseText = document.getElementById('phrase-text');
+            
+            let mediaRecorder;
+            let audioChunks = [];
+            let isRecording = false;
+            
+            // Enrollment phrases
+            const phrases = [
+                "My voice is my password for system access.",
+                "Voice authentication provides reliable security.",
+                "Biometric protection is a modern security approach.",
+                "Each human voice is as unique as a fingerprint.",
+                "The intelligent access control system protects confidential data."
+            ];
+            
+            // Set random phrase
+            function setRandomPhrase() {
+                const randomIndex = Math.floor(Math.random() * phrases.length);
+                phraseText.textContent = phrases[randomIndex];
+            }
+            
+            // Record button handler
+            recordButton.addEventListener('click', function() {
+                if (!isRecording) {
+                    startRecording();
+                } else {
+                    stopRecording();
+                }
+            });
+            
+            // Start recording
+            async function startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    audioChunks = [];
+                    mediaRecorder = new MediaRecorder(stream);
+                    
+                    mediaRecorder.addEventListener('dataavailable', event => {
+                        audioChunks.push(event.data);
+                    });
+                    
+                    mediaRecorder.addEventListener('stop', () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        audioPlayer.src = audioUrl;
+                        audioPreview.classList.remove('d-none');
+                    });
+                    
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordButton.classList.add('recording');
+                    recordStatus.textContent = "Recording...";
+                } catch (err) {
+                    console.error('Error accessing microphone:', err);
+                    alert('Could not access microphone. Please check your browser settings.');
+                }
+            }
+            
+            // Stop recording
+            function stopRecording() {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                recordButton.classList.remove('recording');
+                recordStatus.textContent = "Recording complete";
+            }
+            
+            // Discard recording
+            discardButton.addEventListener('click', function() {
+                audioPreview.classList.add('d-none');
+                setRandomPhrase();
+            });
+            
+            // Save recording
+            saveButton.addEventListener('click', function() {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio_data', audioBlob, 'voice_sample.wav');
+                
+                saveButton.disabled = true;
+                saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+                
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Save error: ' + data.error);
+                    } else {
+                        // Update progress
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving recording:', error);
+                    alert('An error occurred while saving the recording.');
+                })
+                .finally(() => {
+                    saveButton.disabled = false;
+                    saveButton.innerHTML = 'Save';
+                });
+            });
+            
+            // Activate user
+            if (activateButton) {
+                activateButton.addEventListener('click', function() {
+                    if (confirm('Are you sure you want to activate this user? This will allow them to authenticate in the system.')) {
+                        activateButton.disabled = true;
+                        activateButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Activating...';
+                        
+                        fetch(`/admin/users/{{ user.id }}/activate`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.error) {
+                                alert('Activation error: ' + data.error);
+                            } else {
+                                alert('User successfully activated!');
+                                window.location.href = "{{ url_for('manage_users') }}";
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error activating user:', error);
+                            alert('An error occurred during user activation.');
+                        })
+                        .finally(() => {
+                            activateButton.disabled = false;
+                            activateButton.innerHTML = 'Activate User';
+                        });
+                    }
+                });
+            }
+            
+            // Initialize on load
+            setRandomPhrase();
+        });
+    </script>
+</body>
+</html>

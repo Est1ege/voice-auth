@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тестирование голосовой аутентификации</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        .result-panel {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .result-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .result-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .result-neutral {
+            background-color: #e2e3e5;
+            color: #383d41;
+        }
+        .audio-preview {
+            margin: 15px 0;
+        }
+        .test-history {
+            margin-top: 30px;
+        }
+        .test-entry {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+        .test-entry.match {
+            border-left: 4px solid #28a745;
+        }
+        .test-entry.no-match {
+            border-left: 4px solid #dc3545;
+        }
+        .similarity-bar {
+            height: 5px;
+            background-color: #e9ecef;
+            margin-top: 5px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .similarity-fill {
+            height: 100%;
+            background-color: #007bff;
+            border-radius: 2px;
+        }
+        .file-input-container {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        .file-input-container input[type=file] {
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        .file-input-label {
+            display: inline-block;
+            padding: 6px 12px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border-radius: 4px;
+        }
+        .threshold-slider {
+            margin: 20px 0;
+        }
+        .user-selection {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Тестирование голосовой аутентификации</h1>
+
+        <div class="test-container">
+            <h2>Загрузка аудиофайла для тестирования</h2>
+
+            <div class="user-selection">
+                <label for="expectedUser">Ожидаемый пользователь (для статистики):</label>
+                <select id="expectedUser" class="form-control">
+                    <option value="">-- Неизвестно --</option>
+                    <!-- Пользователи будут добавлены с помощью JavaScript -->
+                </select>
+            </div>
+
+            <div class="threshold-slider">
+                <label for="thresholdSlider">Порог распознавания: <span id="thresholdValue">0.70</span></label>
+                <input type="range" class="form-control-range" id="thresholdSlider" min="0.5" max="0.9" step="0.01" value="0.70">
+            </div>
+
+            <div class="file-input-container mb-3">
+                <label class="file-input-label">Выбрать аудиофайл</label>
+                <input type="file" id="audioFile" accept=".wav,.mp3,.ogg,.m4a">
+            </div>
+            <small class="text-muted">Поддерживаются форматы WAV, MP3, OGG, M4A</small>
+
+            <div class="audio-preview">
+                <audio id="audioPreview" controls style="width: 100%; display: none;"></audio>
+            </div>
+
+            <div class="d-flex justify-content-between mt-3">
+                <button id="testButton" class="btn btn-primary" disabled>Проверить аутентификацию</button>
+                <button id="clearHistoryButton" class="btn btn-outline-secondary">Очистить историю</button>
+            </div>
+
+            <div id="resultPanel" class="result-panel"></div>
+        </div>
+
+        <div class="test-container test-history">
+            <h2>История тестов</h2>
+            <div id="testHistory"></div>
+        </div>
+    </div>
+
+    <script>
+        // Глобальные переменные
+        let audioBlob = null;
+        let testHistory = [];
+        let usersList = [];
+
+        // Элементы DOM
+        const audioFileInput = document.getElementById('audioFile');
+        const audioPreview = document.getElementById('audioPreview');
+        const testButton = document.getElementById('testButton');
+        const resultPanel = document.getElementById('resultPanel');
+        const testHistoryContainer = document.getElementById('testHistory');
+        const clearHistoryButton = document.getElementById('clearHistoryButton');
+        const expectedUserSelect = document.getElementById('expectedUser');
+        const thresholdSlider = document.getElementById('thresholdSlider');
+        const thresholdValueDisplay = document.getElementById('thresholdValue');
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Загрузка списка пользователей
+            await loadUsersList();
+
+            // Загрузка истории из localStorage
+            loadTestHistory();
+
+            // Обработчики событий
+            audioFileInput.addEventListener('change', handleFileSelect);
+            testButton.addEventListener('click', testAuthentication);
+            clearHistoryButton.addEventListener('click', clearHistory);
+            thresholdSlider.addEventListener('input', updateThresholdValue);
+        });
+
+        // Загрузка списка пользователей
+        async function loadUsersList() {
+            try {
+                const response = await fetch('/api/users/list');
+                if (response.ok) {
+                    const data = await response.json();
+                    usersList = data.users || [];
+
+                    // Заполнение выпадающего списка
+                    expectedUserSelect.innerHTML = '<option value="">-- Неизвестно --</option>';
+                    usersList.forEach(user => {
+                        const option = document.createElement('option');
+                        option.value = user.id;
+                        option.textContent = user.name || user.id;
+                        expectedUserSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки списка пользователей:', error);
+            }
+        }
+
+        // Обработка выбора файла
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                audioBlob = file;
+
+                // Отображение файла в плеере
+                const audioURL = URL.createObjectURL(file);
+                audioPreview.src = audioURL;
+                audioPreview.style.display = 'block';
+
+                // Разблокировка кнопки тестирования
+                testButton.disabled = false;
+            }
+        }
+
+        // Обновление отображения порога
+        function updateThresholdValue() {
+            thresholdValueDisplay.textContent = thresholdSlider.value;
+        }
+
+// Тестирование аутентификации
+async function testAuthentication() {
+    if (!audioBlob) {
+        showResult('Пожалуйста, выберите аудиофайл для проверки', 'error');
+        return;
+    }
+    
+    try {
+        // Отображение процесса
+        showResult('Идет проверка аудиозаписи...', 'neutral');
+        testButton.disabled = true;
+        
+        // Создание FormData для отправки файла
+        const formData = new FormData();
+        formData.append('audio_file', audioBlob);
+        formData.append('threshold', thresholdSlider.value);
+        formData.append('expected_user', expectedUserSelect.value || '');
+        
+        console.log('Sending request to /api/test/authenticate with formData:', {
+            filename: audioBlob.name,
+            size: audioBlob.size,
+            threshold: thresholdSlider.value,
+            expectedUser: expectedUserSelect.value || ''
+        });
+        
+        // Отправка запроса
+        const response = await fetch('/api/test/authenticate', {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log('Response status:', response.status);
+        
+        // Обработка ответа
+        if (response.ok) {
+            let responseText;
+            try {
+                responseText = await response.text();
+                console.log('Response text:', responseText);
+                
+                const result = JSON.parse(responseText);
+                processAuthenticationResult(result);
+            } catch (jsonError) {
+                console.error('Error parsing JSON:', jsonError, 'Response text:', responseText);
+                showResult(`Ошибка обработки ответа: ${jsonError.message}. Ответ сервера: ${responseText.substring(0, 200)}...`, 'error');
+            }
+        } else {
+            let errorMessage = 'Неизвестная ошибка';
+            try {
+                const errorText = await response.text();
+                console.error('Error response:', errorText);
+                
+                try {
+                    const error = JSON.parse(errorText);
+                    errorMessage = error.message || error.detail || errorText;
+                } catch (jsonError) {
+                    errorMessage = errorText;
+                }
+            } catch (textError) {
+                errorMessage = `Ошибка ${response.status}`;
+            }
+            showResult(`Ошибка: ${errorMessage}`, 'error');
+        }
+    } catch (error) {
+        console.error('Ошибка при тестировании:', error);
+        showResult(`Ошибка при тестировании: ${error.message || 'Неизвестная ошибка'}`, 'error');
+    } finally {
+        testButton.disabled = false;
+    }
+}
+        // Обработка результата аутентификации
+        function processAuthenticationResult(result) {
+            if (result.success) {
+                // Создание записи в истории
+                const testEntry = {
+                    timestamp: new Date().toISOString(),
+                    result: result,
+                    expected_user: expectedUserSelect.value,
+                    fileName: audioFileInput.files[0].name,
+                    threshold: parseFloat(thresholdSlider.value)
+                };
+
+                // Добавление в историю
+                testHistory.unshift(testEntry);
+                saveTestHistory();
+
+                // Отображение результата
+                if (result.authorized) {
+                    showResult(`✅ Пользователь опознан: ${result.user_id || 'ID не указан'}<br>Уровень совпадения: ${result.match_score}%`, 'success');
+                } else if (result.spoofing_detected) {
+                    showResult(`⚠️ Обнаружена попытка имитации голоса<br>Вероятность спуфинга: ${Math.round(result.spoof_probability * 100)}%`, 'error');
+                } else {
+                    showResult(`❌ Пользователь не опознан<br>Уровень совпадения: ${result.match_score}%<br>Порог: ${Math.round(result.threshold * 100)}%`, 'error');
+                }
+
+                // Обновление истории тестов
+                renderTestHistory();
+            } else {
+                showResult(`Ошибка: ${result.message || 'Неизвестная ошибка'}`, 'error');
+            }
+        }
+
+        // Отображение результата
+        function showResult(message, type) {
+            resultPanel.innerHTML = message;
+            resultPanel.className = 'result-panel';
+
+            if (type === 'success') {
+                resultPanel.classList.add('result-success');
+            } else if (type === 'error') {
+                resultPanel.classList.add('result-error');
+            } else {
+                resultPanel.classList.add('result-neutral');
+            }
+
+            resultPanel.style.display = 'block';
+        }
+
+        // Сохранение истории в localStorage
+        function saveTestHistory() {
+            // Ограничение истории до 20 записей
+            if (testHistory.length > 20) {
+                testHistory = testHistory.slice(0, 20);
+            }
+
+            localStorage.setItem('voiceAuthTestHistory', JSON.stringify(testHistory));
+        }
+
+        // Загрузка истории из localStorage
+        function loadTestHistory() {
+            try {
+                const savedHistory = localStorage.getItem('voiceAuthTestHistory');
+                if (savedHistory) {
+                    testHistory = JSON.parse(savedHistory);
+                    renderTestHistory();
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки истории:', error);
+                testHistory = [];
+            }
+        }
+
+        // Отображение истории тестов
+        function renderTestHistory() {
+            testHistoryContainer.innerHTML = '';
+
+            if (testHistory.length === 0) {
+                testHistoryContainer.innerHTML = '<p class="text-muted">История тестов пуста</p>';
+                return;
+            }
+
+            testHistory.forEach((entry, index) => {
+                const entryDiv = document.createElement('div');
+                const result = entry.result;
+
+                // Определение класса записи
+                entryDiv.className = 'test-entry';
+                if (result.authorized) {
+                    entryDiv.classList.add('match');
+                } else {
+                    entryDiv.classList.add('no-match');
+                }
+
+                // Форматирование даты
+                const date = new Date(entry.timestamp);
+                const formattedDate = date.toLocaleString();
+
+                // Определение совпадения с ожидаемым пользователем
+                let expectedMatch = '';
+                if (entry.expected_user && result.user_id) {
+                    if (entry.expected_user === result.user_id) {
+                        expectedMatch = '<span class="badge badge-success">Правильное опознание</span>';
+                    } else {
+                        expectedMatch = '<span class="badge badge-danger">Неверное опознание</span>';
+                    }
+                }
+
+                // Формирование содержания записи
+                let content = `
+                    <div class="d-flex justify-content-between">
+                        <div><strong>Файл:</strong> ${entry.fileName}</div>
+                        <div class="text-muted">${formattedDate}</div>
+                    </div>
+                `;
+
+                if (result.spoofing_detected) {
+                    content += `<div class="alert alert-warning mt-2 mb-2 py-2">Обнаружена имитация голоса (${Math.round(result.spoof_probability * 100)}%)</div>`;
+                } else if (result.authorized) {
+                    content += `
+                        <div class="mt-2">
+                            <strong>Опознан как:</strong> ${result.user_id} ${expectedMatch}<br>
+                            <strong>Совпадение:</strong> ${result.match_score}%
+                            <div class="similarity-bar">
+                                <div class="similarity-fill" style="width: ${result.match_score}%"></div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    content += `
+                        <div class="mt-2">
+                            <strong>Не опознан</strong> ${expectedMatch}<br>
+                            <strong>Наилучшее совпадение:</strong> ${result.match_score}%
+                            <div class="similarity-bar">
+                                <div class="similarity-fill" style="width: ${result.match_score}%"></div>
+                            </div>
+                            <small class="text-muted">Порог: ${Math.round(entry.threshold * 100)}%</small>
+                        </div>
+                    `;
+                }
+
+                entryDiv.innerHTML = content;
+                testHistoryContainer.appendChild(entryDiv);
+            });
+        }
+
+        // Очистка истории
+        function clearHistory() {
+            if (confirm('Вы уверены, что хотите очистить историю тестов?')) {
+                testHistory = [];
+                localStorage.removeItem('voiceAuthTestHistory');
+                renderTestHistory();
+            }
+        }
+    </script>
+</body>
+</html>

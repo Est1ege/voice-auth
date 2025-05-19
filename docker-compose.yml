@@ -1,0 +1,127 @@
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./static:/usr/share/nginx/html
+    depends_on:
+      - web
+    networks:
+      - frontend
+      - backend
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    volumes:
+      - ./web:/app
+      - ./shared:/shared
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_DEBUG=0
+      - SECRET_KEY=${SECRET_KEY}
+      - API_URL=http://api:5000
+      - UPLOAD_FOLDER=/shared/temp
+      - EXPORT_FOLDER=/shared/exports
+    ports:
+      - "5000:8000"
+    depends_on:
+      - api
+    networks:
+      - frontend
+      - backend
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    volumes:
+      - ./api:/app
+      - ./shared:/shared
+    environment:
+      - MODEL_PATH=/shared/models
+      - DATABASE_URL=mongodb://mongo:password123@db:27017/voice_auth
+      - ML_SERVICE_URL=http://ml_model:5000
+      - AUDIO_PROCESSOR_URL=http://audio_processor:5000
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    ports:
+      - "5001:5000"
+    depends_on:
+      - db
+      - ml_model
+    networks:
+      - backend
+
+  ml_model:
+    build:
+      context: ./ml_model
+      dockerfile: Dockerfile
+    volumes:
+      - ./ml_model:/app
+      - ./shared:/shared
+    environment:
+      - MODEL_PATH=/shared/models
+      - EMBEDDINGS_PATH=/shared/embeddings
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    ports:
+      - "5002:5000"
+    networks:
+      - backend
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  audio_processor:
+    build:
+      context: ./audio_processor
+      dockerfile: Dockerfile
+    volumes:
+      - ./audio_processor:/app
+      - ./shared:/shared
+    environment:
+      - AUDIO_PATH=/shared/audio
+    ports:
+      - "5003:5000"
+    networks:
+      - backend
+
+  db:
+    image: mongo:5.0
+    volumes:
+      - db_data:/data/db
+      - ./db/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    command: ["mongod", "--auth"]
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${DB_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${DB_PASSWORD}
+      - MONGO_INITDB_DATABASE=voice_auth
+    ports:
+      - "27017:27017"
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+
+volumes:
+  db_data:

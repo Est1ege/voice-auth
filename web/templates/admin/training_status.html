@@ -1,0 +1,420 @@
+<!-- web/templates/admin/training_status.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Статус тренировки модели - ГолосДоступ</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .progress {
+            height: 25px;
+        }
+        .status-icon {
+            font-size: 3rem;
+        }
+        .status-badge {
+            font-size: 1rem;
+            padding: 0.5rem 0.8rem;
+        }
+        .status-message {
+            font-size: 1.1rem;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .status-running {
+            animation: pulse 2s infinite;
+        }
+        .log-container {
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            font-family: monospace;
+            font-size: 0.875rem;
+        }
+        .log-entry {
+            margin-bottom: 0.25rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log-entry.log-info {
+            color: #0d6efd;
+        }
+        .log-entry.log-warning {
+            color: #ffc107;
+        }
+        .log-entry.log-error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Панель управления
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Пользователи
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Журнал доступа
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> Состояние системы
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Монитор аутентификации
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Статус тренировки модели</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <a href="{{ url_for('training_dashboard') }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> К панели тренировки
+                            </a>
+                            <a href="{{ url_for('training_list') }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-list"></i> История тренировок
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+<!-- Добавляем секцию для отображения списка тренировок -->
+<!-- Добавьте этот блок в main после существующей секции, но перед закрывающим тегом </main> -->
+
+<!-- Информация о статусе тренировки -->
+{% if status %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-info-circle"></i> Статус тренировки #{{ status.task_id }}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row align-items-center mb-4">
+                    <div class="col-md-1 text-center">
+                        <!-- Иконка статуса -->
+                        {% if status.status == 'completed' %}
+                            <i class="bi bi-check-circle-fill text-success status-icon"></i>
+                        {% elif status.status == 'error' %}
+                            <i class="bi bi-x-circle-fill text-danger status-icon"></i>
+                        {% elif status.status == 'starting' %}
+                            <i class="bi bi-hourglass-split text-info status-icon status-running"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-repeat text-primary status-icon status-running"></i>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-11">
+                        <div class="row mb-2">
+                            <div class="col-md-3 text-muted">Тип модели:</div>
+                            <div class="col-md-9">
+                                <span class="badge {% if status.type == 'voice_model' %}bg-primary{% elif status.type == 'anti_spoof' %}bg-danger{% else %}bg-secondary{% endif %} status-badge">
+                                    {% if status.type == 'voice_model' %}
+                                        Распознавание голоса
+                                    {% elif status.type == 'anti_spoof' %}
+                                        Защита от спуфинга
+                                    {% else %}
+                                        {{ status.type }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-md-3 text-muted">Статус:</div>
+                            <div class="col-md-9">
+                                <span class="badge {% if status.status == 'completed' %}bg-success{% elif status.status == 'error' %}bg-danger{% elif status.status == 'starting' %}bg-info{% else %}bg-primary{% endif %} status-badge">
+                                    {% if status.status == 'completed' %}
+                                        Завершено
+                                    {% elif status.status == 'error' %}
+                                        Ошибка
+                                    {% elif status.status == 'starting' %}
+                                        Инициализация
+                                    {% elif status.status == 'training' %}
+                                        Обучение
+                                    {% else %}
+                                        {{ status.status }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-md-3 text-muted">Время начала:</div>
+                            <div class="col-md-9">
+                                {{ status.start_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') if status.start_time else '-' }}
+                            </div>
+                        </div>
+                        {% if status.end_time %}
+                        <div class="row mb-2">
+                            <div class="col-md-3 text-muted">Время завершения:</div>
+                            <div class="col-md-9">
+                                {{ status.end_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') }}
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="row mb-2">
+                            <div class="col-md-3 text-muted">Сообщение:</div>
+                            <div class="col-md-9 status-message">
+                                {{ status.message if status.message else 'Нет сообщения' }}
+                            </div>
+                        </div>
+                        {% if status.progress is defined and status.status != 'completed' and status.status != 'error' %}
+                        <div class="row mb-2">
+                            <div class="col-md-3 text-muted">Прогресс:</div>
+                            <div class="col-md-9">
+                                <div class="progress">
+                                    <div class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                                        role="progressbar"
+                                        style="width: {{ (status.progress * 100)|round|int }}%"
+                                        aria-valuenow="{{ (status.progress * 100)|round|int }}"
+                                        aria-valuemin="0"
+                                        aria-valuemax="100">
+                                        {{ (status.progress * 100)|round|int }}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if status.best_loss is defined and status.best_loss %}
+                        <div class="row mb-2">
+                            <div class="col-md-3 text-muted">Лучшая потеря:</div>
+                            <div class="col-md-9">
+                                {{ status.best_loss|round(4) }}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- График потери если есть -->
+                {% if status.training_loss and status.training_loss|length > 0 %}
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <h5>График потери</h5>
+                        <div style="height: 300px;">
+                            <canvas id="lossChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Кнопки действий -->
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <div class="btn-group">
+                            <a href="{{ url_for('training_dashboard') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> Назад
+                            </a>
+                            {% if status.status == 'completed' %}
+                            <a href="{{ url_for('deploy_model', task_id=status.task_id) }}" class="btn btn-success" onclick="return confirm('Вы уверены, что хотите развернуть эту модель?');">
+                                <i class="bi bi-cloud-upload"></i> Развернуть модель
+                            </a>
+                            {% elif status.status != 'error' and status.status != 'completed' %}
+                            <form method="POST" action="{{ url_for('stop_training') }}" class="d-inline">
+                                <input type="hidden" name="task_id" value="{{ status.task_id }}">
+                                <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены, что хотите остановить тренировку?');">
+                                    <i class="bi bi-x-circle"></i> Остановить тренировку
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Журнал выполнения -->
+                {% if status.log_entries %}
+                <div class="row">
+                    <div class="col-md-12">
+                        <h5><i class="bi bi-terminal"></i> Журнал выполнения</h5>
+                        <div class="log-container">
+                            {% for entry in status.log_entries %}
+                            <div class="log-entry {% if 'error' in entry.lower() %}log-error{% elif 'warning' in entry.lower() %}log-warning{% else %}log-info{% endif %}">
+                                {{ entry }}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+            </main>
+        </div>
+    </div>
+
+    {% if status and status.training_loss %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Создаем график обучения
+        const ctx = document.getElementById('lossChart').getContext('2d');
+        const lossChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: {{ status.training_loss|length }}}, (_, i) => i + 1),
+                datasets: [{
+                    label: 'Значение потери',
+                    data: {{ status.training_loss|tojson }},
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: {
+                            display: true,
+                            text: 'Потеря'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Эпоха'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Значение: ${context.parsed.y.toFixed(4)}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+    {% endif %}
+
+    {% if status and status.status != 'completed' and status.status != 'error' %}
+    <script>
+        // Автоматическое обновление страницы каждые 5 секунд
+        setTimeout(function() {
+            window.location.reload();
+        }, 5000);
+    </script>
+    {% endif %}
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+
+    {% if status and status.log_entries %}
+    <script>
+        // Прокрутка логов вниз при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            const logContainer = document.querySelector('.log-container');
+            if (logContainer) {
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        });
+    </script>
+    {% endif %}
+</body>
+</html>

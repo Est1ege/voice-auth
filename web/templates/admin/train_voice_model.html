@@ -1,0 +1,223 @@
+<!-- web/templates/admin/train_voice_model.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тренировка модели распознавания голоса - ГолосДоступ</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            background-color: #343a40;
+            color: white;
+        }
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            font-weight: 500;
+            padding: .5rem 1rem;
+        }
+        .nav-link:hover {
+            color: white;
+        }
+        .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,.1);
+        }
+        .nav-link i {
+            margin-right: .5rem;
+        }
+        main {
+            padding-top: 2rem;
+        }
+        .param-card {
+            transition: all 0.3s;
+        }
+        .param-card:hover {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Панель управления
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Пользователи
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('access_logs') }}">
+                                <i class="bi bi-list-check"></i> Журнал доступа
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
+                                <i class="bi bi-gear"></i> Состояние системы
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Монитор аутентификации
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Тренировка модели распознавания голоса</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <a href="{{ url_for('training_dashboard') }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Назад
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+
+                <div class="row mb-4">
+                    <div class="col-md-8">
+                        <div class="card shadow">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0"><i class="bi bi-mic-fill"></i> Параметры тренировки модели ECAPA-TDNN</h5>
+                            </div>
+                            <div class="card-body">
+                                <form method="post" action="{{ url_for('train_voice_model') }}">
+                                    <div class="alert alert-info mb-4">
+                                        <i class="bi bi-info-circle"></i> Модель ECAPA-TDNN будет обучена на всех доступных голосовых образцах пользователей. 
+                                        Убедитесь, что в системе достаточно данных для тренировки.
+                                    </div>
+                                    
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <div class="card param-card mb-3">
+                                                <div class="card-body">
+                                                    <h6 class="card-title">Размер батча</h6>
+                                                    <div class="form-floating">
+                                                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="32" min="1" max="128">
+                                                        <label for="batch_size">Размер батча</label>
+                                                    </div>
+                                                    <small class="text-muted">Рекомендуемые значения: 8-64</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-md-4">
+                                            <div class="card param-card mb-3">
+                                                <div class="card-body">
+                                                    <h6 class="card-title">Скорость обучения</h6>
+                                                    <div class="form-floating">
+                                                        <input type="number" step="0.0001" class="form-control" id="learning_rate" name="learning_rate" value="0.001" min="0.00001" max="0.1">
+                                                        <label for="learning_rate">Скорость обучения</label>
+                                                    </div>
+                                                    <small class="text-muted">Рекомендуемые значения: 0.0001-0.01</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-md-4">
+                                            <div class="card param-card mb-3">
+                                                <div class="card-body">
+                                                    <h6 class="card-title">Количество эпох</h6>
+                                                    <div class="form-floating">
+                                                        <input type="number" class="form-control" id="num_epochs" name="num_epochs" value="50" min="1" max="200">
+                                                        <label for="num_epochs">Количество эпох</label>
+                                                    </div>
+                                                    <small class="text-muted">Рекомендуемые значения: 20-100</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                                        <button type="submit" class="btn btn-primary btn-lg">
+                                            <i class="bi bi-play-fill"></i> Начать тренировку
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card shadow">
+                            <div class="card-header bg-secondary text-white">
+                                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Информация</h5>
+                            </div>
+                            <div class="card-body">
+                                <h6>О модели ECAPA-TDNN</h6>
+                                <p>ECAPA-TDNN (Emphasized Channel Attention, Propagation and Aggregation in Time Delay Neural Network) - современная архитектура для распознавания голоса, которая показывает высокую точность в задачах верификации.</p>
+                                
+                                <h6>Процесс тренировки</h6>
+                                <ul class="list-unstyled">
+                                    <li><i class="bi bi-1-circle"></i> Подготовка данных из записей пользователей</li>
+                                    <li><i class="bi bi-2-circle"></i> Создание триплетов для обучения</li>
+                                    <li><i class="bi bi-3-circle"></i> Оптимизация параметров модели</li>
+                                    <li><i class="bi bi-4-circle"></i> Валидация и сохранение лучшей модели</li>
+                                </ul>
+                                
+                                <div class="alert alert-warning">
+                                    <strong>Внимание!</strong> Тренировка может занять продолжительное время, особенно на CPU. Не закрывайте страницу.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,10 +1,9 @@
-<!-- web/templates/admin/train_anti_spoof.html -->
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Тренировка модели защиты от спуфинга - ГолосДоступ</title>
+    <title>Anti-Spoofing Model Training - VoiceAccess</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
     <style>
@@ -53,20 +52,21 @@
             transition: all 0.3s;
         }
         .param-card:hover {
-            background-color: #f8f9fa;
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
         }
     </style>
 </head>
 <body>
     <header class="navbar navbar-dark bg-dark fixed-top">
         <div class="container-fluid">
-            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">VoiceAccess</a>
             <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="d-flex align-items-center">
                 <span class="text-white me-2">{{ session.username }}</span>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
             </div>
         </div>
     </header>
@@ -78,32 +78,37 @@
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
-                                <i class="bi bi-speedometer2"></i> Панель управления
+                                <i class="bi bi-speedometer2"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('manage_users') }}">
-                                <i class="bi bi-people"></i> Пользователи
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('access_logs') }}">
-                                <i class="bi bi-list-check"></i> Журнал доступа
+                                <i class="bi bi-list-check"></i> Access Logs
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link active" href="{{ url_for('training_dashboard') }}">
-                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('system_status') }}">
-                                <i class="bi bi-gear"></i> Состояние системы
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Export/Import
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('auth_monitor') }}">
-                                <i class="bi bi-mic"></i> Монитор аутентификации
+                                <i class="bi bi-mic"></i> Auth Monitor
                             </a>
                         </li>
                     </ul>
@@ -112,11 +117,11 @@
 
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                    <h1 class="h2">Тренировка модели защиты от спуфинга</h1>
+                    <h1 class="h2">Anti-Spoofing Model Training</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">
                         <div class="btn-group me-2">
                             <a href="{{ url_for('training_dashboard') }}" class="btn btn-sm btn-outline-secondary">
-                                <i class="bi bi-arrow-left"></i> Назад
+                                <i class="bi bi-arrow-left"></i> Back
                             </a>
                         </div>
                     </div>
@@ -130,93 +135,93 @@
                     <div class="col-md-8">
                         <div class="card shadow">
                             <div class="card-header bg-danger text-white">
-                                <h5 class="mb-0"><i class="bi bi-shield-fill-check"></i> Параметры тренировки модели RawNet2</h5>
+                                <h5 class="mb-0"><i class="bi bi-shield-fill-check"></i> RawNet2 Training Parameters</h5>
                             </div>
                             <div class="card-body">
                                 <form method="post" action="{{ url_for('train_anti_spoof') }}">
                                     <div class="alert alert-info mb-4">
-                                        <i class="bi bi-info-circle"></i> Модель RawNet2 для защиты от спуфинга будет обучена на имеющихся образцах реальных голосов и синтетических атак.
-                                        Система автоматически создаст синтетические образцы атак, если их недостаточно.
+                                        <i class="bi bi-info-circle"></i> The RawNet2 anti-spoofing model will be trained on available samples of real voices and synthetic attacks.
+                                        The system will automatically generate synthetic attack samples if not enough are available.
                                     </div>
-                                    
+
                                     <div class="row g-3">
                                         <div class="col-md-4">
                                             <div class="card param-card mb-3">
                                                 <div class="card-body">
-                                                    <h6 class="card-title">Размер батча</h6>
+                                                    <h6 class="card-title">Batch Size</h6>
                                                     <div class="form-floating">
                                                         <input type="number" class="form-control" id="batch_size" name="batch_size" value="32" min="1" max="128">
-                                                        <label for="batch_size">Размер батча</label>
+                                                        <label for="batch_size">Batch Size</label>
                                                     </div>
-                                                    <small class="text-muted">Рекомендуемые значения: 8-64</small>
+                                                    <small class="text-muted">Recommended values: 8-64</small>
                                                 </div>
                                             </div>
                                         </div>
-                                        
+
                                         <div class="col-md-4">
                                             <div class="card param-card mb-3">
                                                 <div class="card-body">
-                                                    <h6 class="card-title">Скорость обучения</h6>
+                                                    <h6 class="card-title">Learning Rate</h6>
                                                     <div class="form-floating">
                                                         <input type="number" step="0.0001" class="form-control" id="learning_rate" name="learning_rate" value="0.001" min="0.00001" max="0.1">
-                                                        <label for="learning_rate">Скорость обучения</label>
+                                                        <label for="learning_rate">Learning Rate</label>
                                                     </div>
-                                                    <small class="text-muted">Рекомендуемые значения: 0.0001-0.01</small>
+                                                    <small class="text-muted">Recommended values: 0.0001-0.01</small>
                                                 </div>
                                             </div>
                                         </div>
-                                        
+
                                         <div class="col-md-4">
                                             <div class="card param-card mb-3">
                                                 <div class="card-body">
-                                                    <h6 class="card-title">Количество эпох</h6>
+                                                    <h6 class="card-title">Number of Epochs</h6>
                                                     <div class="form-floating">
                                                         <input type="number" class="form-control" id="num_epochs" name="num_epochs" value="30" min="1" max="200">
-                                                        <label for="num_epochs">Количество эпох</label>
+                                                        <label for="num_epochs">Number of Epochs</label>
                                                     </div>
-                                                    <small class="text-muted">Рекомендуемые значения: 20-50</small>
+                                                    <small class="text-muted">Recommended values: 20-50</small>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                    
+
                                     <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
                                         <button type="submit" class="btn btn-danger btn-lg">
-                                            <i class="bi bi-play-fill"></i> Начать тренировку
+                                            <i class="bi bi-play-fill"></i> Start Training
                                         </button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="col-md-4">
                         <div class="card shadow">
                             <div class="card-header bg-secondary text-white">
-                                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Информация</h5>
+                                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Information</h5>
                             </div>
                             <div class="card-body">
-                                <h6>О модели RawNet2</h6>
-                                <p>RawNet2 - эффективная архитектура для обнаружения спуфинг-атак, работающая напрямую с аудиосигналом. Эта модель обеспечивает надежную защиту от различных типов голосовых подделок.</p>
-                                
-                                <h6>Типы обнаруживаемых атак</h6>
+                                <h6>About RawNet2</h6>
+                                <p>RawNet2 is an efficient architecture for detecting spoofing attacks that works directly with audio signals. This model provides reliable protection against various types of voice forgeries.</p>
+
+                                <h6>Types of Detected Attacks</h6>
                                 <ul>
-                                    <li>Воспроизведение записанного голоса</li>
-                                    <li>Синтезированная речь</li>
-                                    <li>Преобразованный голос</li>
-                                    <li>Глубокие подделки (deepfakes)</li>
+                                    <li>Replay of recorded voice</li>
+                                    <li>Synthesized speech</li>
+                                    <li>Voice conversion</li>
+                                    <li>Deepfakes</li>
                                 </ul>
-                                
-                                <h6>Процесс тренировки</h6>
+
+                                <h6>Training Process</h6>
                                 <ol class="list-unstyled">
-                                    <li><i class="bi bi-1-circle"></i> Сбор реальных образцов голоса</li>
-                                    <li><i class="bi bi-2-circle"></i> Генерация синтетических спуфинг-атак</li>
-                                    <li><i class="bi bi-3-circle"></i> Обучение бинарного классификатора</li>
-                                    <li><i class="bi bi-4-circle"></i> Оценка и сохранение лучшей модели</li>
+                                    <li><i class="bi bi-1-circle"></i> Collecting real voice samples</li>
+                                    <li><i class="bi bi-2-circle"></i> Generating synthetic spoofing attacks</li>
+                                    <li><i class="bi bi-3-circle"></i> Training the binary classifier</li>
+                                    <li><i class="bi bi-4-circle"></i> Evaluating and saving the best model</li>
                                 </ol>
-                                
+
                                 <div class="alert alert-warning">
-                                    <strong>Внимание!</strong> Тренировка может занять продолжительное время, особенно на CPU. Вы можете закрыть страницу и проверить статус позже в истории тренировок.
+                                    <strong>Attention!</strong> Training may take a considerable amount of time, especially on CPU. You can close the page and check the status later in the training history.
                                 </div>
                             </div>
                         </div>

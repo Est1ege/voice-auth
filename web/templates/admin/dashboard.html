@@ -87,12 +87,12 @@
                 <div class="sidebar-sticky">
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link active" href="{{ url_for('admin_dashboard') }}">
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
                                 <i class="bi bi-speedometer2"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
                                 <i class="bi bi-people"></i> Users
                             </a>
                         </li>
@@ -102,8 +102,18 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('system_status') }}">
                                 <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Export/Import
                             </a>
                         </li>
                         <li class="nav-item">
@@ -114,6 +124,7 @@
                     </ul>
                 </div>
             </nav>
+
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">Dashboard</h1>

@@ -1,10 +1,9 @@
-<!-- web/templates/admin/system.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Status - Voice Recognition System</title>
+    <title>System Status - Voice Authentication System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
     <style>
@@ -88,7 +87,7 @@
 <body>
     <header class="navbar navbar-dark bg-dark fixed-top">
         <div class="container-fluid">
-            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Recognition System</a>
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Authentication System</a>
             <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -110,7 +109,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('manage_users') }}">
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
                                 <i class="bi bi-people"></i> Users
                             </a>
                         </li>
@@ -125,8 +124,13 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link active" href="{{ url_for('system_status') }}">
+                            <a class="nav-link" href="{{ url_for('system_status') }}">
                                 <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Export/Import
                             </a>
                         </li>
                         <li class="nav-item">
@@ -153,7 +157,7 @@
                 <a href="{{ url_for('filesystem_diagnosis') }}" class="btn btn-info mb-4">
                     <i class="bi bi-hdd-rack"></i> File System Diagnostics
                 </a>
-                
+
                 <div class="row mb-4">
                     <!-- API Service Status -->
                     <div class="col-md-3 mb-4">
@@ -177,7 +181,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- ML Service Status -->
                     <div class="col-md-3 mb-4">
                         <div class="card status-card shadow h-100">
@@ -200,7 +204,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Database Status -->
                     <div class="col-md-3 mb-4">
                         <div class="card status-card shadow h-100">
@@ -223,7 +227,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Overall System Status -->
                     <div class="col-md-3 mb-4">
                         <div class="card status-card shadow h-100">
@@ -274,13 +278,13 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <h6 class="mt-3">Activation Status</h6>
                                 <div class="progress mb-4 resource-usage">
-                                    <div class="progress-bar bg-success" role="progressbar" 
-                                        style="width: {{ (status.active_users_count / status.users_count * 100) if status.users_count > 0 else 0 }}%" 
-                                        aria-valuenow="{{ status.active_users_count }}" 
-                                        aria-valuemin="0" 
+                                    <div class="progress-bar bg-success" role="progressbar"
+                                        style="width: {{ (status.active_users_count / status.users_count * 100) if status.users_count > 0 else 0 }}%"
+                                        aria-valuenow="{{ status.active_users_count }}"
+                                        aria-valuemin="0"
                                         aria-valuemax="{{ status.users_count }}">
                                         {{ "%.1f"|format(status.active_users_count / status.users_count * 100) if status.users_count > 0 else 0 }}%
                                     </div>
@@ -288,7 +292,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- System Information and Resources -->
                     <div class="col-md-6 mb-4">
                         <div class="card shadow">
@@ -351,88 +355,86 @@
                         </div>
                     </div>
                 </div>
-                <!-- Добавьте эту карточку после блока "User Information" и "System Information" -->
-<!-- Вставить после закрывающего тега </div> для строки "row" с классами "col-md-6" -->
 
-<!-- System Management Card -->
-<div class="card shadow mb-4">
-    <div class="card-header bg-warning text-white">
-        <h5 class="mb-0"><i class="bi bi-tools"></i> System Management</h5>
-    </div>
-    <div class="card-body">
-        <div class="alert alert-warning">
-            <strong>Warning!</strong> The following actions can affect system operation. Use them only when necessary.
-        </div>
-        
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <div class="card border-0 bg-light">
-                    <div class="card-header">System Reinitialization</div>
+                <!-- System Management Card -->
+                <div class="card shadow mb-4">
+                    <div class="card-header bg-warning text-white">
+                        <h5 class="mb-0"><i class="bi bi-tools"></i> System Management</h5>
+                    </div>
                     <div class="card-body">
-                        <p>Reinitializes ML service components and reloads user data. Use this if the system is experiencing matching issues.</p>
-                        
-                        <!-- Flash Messages for Reinitialization -->
-                        {% with messages = get_flashed_messages(with_categories=true) %}
-                            {% if messages %}
-                                {% for category, message in messages %}
-                                    {% if 'reinitial' in message.lower() %}
-                                        <div class="alert alert-{{ category }} mb-3">
-                                            {{ message }}
+                        <div class="alert alert-warning">
+                            <strong>Warning!</strong> The following actions can affect system operation. Use them only when necessary.
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="card border-0 bg-light">
+                                    <div class="card-header">System Reinitialization</div>
+                                    <div class="card-body">
+                                        <p>Reinitializes ML service components and reloads user data. Use this if the system is experiencing matching issues.</p>
+
+                                        <!-- Flash Messages for Reinitialization -->
+                                        {% with messages = get_flashed_messages(with_categories=true) %}
+                                            {% if messages %}
+                                                {% for category, message in messages %}
+                                                    {% if 'reinitial' in message.lower() %}
+                                                        <div class="alert alert-{{ category }} mb-3">
+                                                            {{ message }}
+                                                        </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            {% endif %}
+                                        {% endwith %}
+
+                                        <form action="/admin/system/reinitialize" method="post" id="reinitializeForm">
+                                            <button type="submit" class="btn btn-warning">
+                                                <i class="bi bi-arrow-repeat"></i> Reinitialize System
+                                            </button>
+                                        </form>
+
+                                        <!-- Progress indicator (hidden by default) -->
+                                        <div id="reinitialization-progress" style="display: none;" class="mt-3">
+                                            <div class="progress">
+                                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                                            </div>
+                                            <p class="text-center mt-2">System reinitialization in progress, please wait...</p>
                                         </div>
-                                    {% endif %}
-                                {% endfor %}
-                            {% endif %}
-                        {% endwith %}
-                        
-                        <form action="/admin/system/reinitialize" method="post" id="reinitializeForm">
-                            <button type="submit" class="btn btn-warning">
-                                <i class="bi bi-arrow-repeat"></i> Reinitialize System
-                            </button>
-                        </form>
-                        
-                        <!-- Progress indicator (hidden by default) -->
-                        <div id="reinitialization-progress" style="display: none;" class="mt-3">
-                            <div class="progress">
-                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                                    </div>
+                                </div>
                             </div>
-                            <p class="text-center mt-2">System reinitialization in progress, please wait...</p>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="card border-0 bg-light">
+                                    <div class="card-header">Thresholds Configuration</div>
+                                    <div class="card-body">
+                                        <p>Adjust voice matching and anti-spoofing thresholds.</p>
+                                        <div class="mb-3">
+                                            <label class="form-label">Matching Threshold</label>
+                                            <select class="form-select" id="matchingThreshold">
+                                                <option value="0.5">0.5 - Very Permissive</option>
+                                                <option value="0.6">0.6 - Permissive</option>
+                                                <option value="0.7" selected>0.7 - Balanced</option>
+                                                <option value="0.8">0.8 - Strict</option>
+                                                <option value="0.9">0.9 - Very Strict</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Anti-Spoofing Threshold</label>
+                                            <select class="form-select" id="spoofingThreshold">
+                                                <option value="0.3">0.3 - Less Sensitive</option>
+                                                <option value="0.5">0.5 - Balanced</option>
+                                                <option value="0.7" selected>0.7 - More Sensitive</option>
+                                            </select>
+                                        </div>
+                                        <button class="btn btn-primary" id="saveThresholdsBtn">
+                                            <i class="bi bi-save"></i> Save Thresholds
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            
-            <div class="col-md-6 mb-3">
-                <div class="card border-0 bg-light">
-                    <div class="card-header">Thresholds Configuration</div>
-                    <div class="card-body">
-                        <p>Adjust voice matching and anti-spoofing thresholds.</p>
-                        <div class="mb-3">
-                            <label class="form-label">Matching Threshold</label>
-                            <select class="form-select" id="matchingThreshold">
-                                <option value="0.5">0.5 - Very Permissive</option>
-                                <option value="0.6">0.6 - Permissive</option>
-                                <option value="0.7" selected>0.7 - Balanced</option>
-                                <option value="0.8">0.8 - Strict</option>
-                                <option value="0.9">0.9 - Very Strict</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Anti-Spoofing Threshold</label>
-                            <select class="form-select" id="spoofingThreshold">
-                                <option value="0.3">0.3 - Less Sensitive</option>
-                                <option value="0.5">0.5 - Balanced</option>
-                                <option value="0.7" selected>0.7 - More Sensitive</option>
-                            </select>
-                        </div>
-                        <button class="btn btn-primary" id="saveThresholdsBtn">
-                            <i class="bi bi-save"></i> Save Thresholds
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
                 <!-- Docker Containers -->
                 <div class="card shadow mb-4">
@@ -553,13 +555,13 @@
         document.getElementById('refreshStatusBtn').addEventListener('click', function() {
             location.reload();
         });
-        
+
         // Container actions
         document.querySelectorAll('[data-action="restart"], [data-action="stop"]').forEach(button => {
             button.addEventListener('click', function() {
                 const container = this.getAttribute('data-container');
                 const action = this.getAttribute('data-action');
-                
+
                 if (confirm(`Are you sure you want to ${action} the container ${container}?`)) {
                     fetch(`/api/system/container/${action}/${container}`, {
                         method: 'POST'
@@ -580,13 +582,13 @@
                 }
             });
         });
-        
+
         // Backup actions
         document.querySelectorAll('[data-action="download"], [data-action="restore"]').forEach(button => {
             button.addEventListener('click', function() {
                 const backupId = this.getAttribute('data-backup');
                 const action = this.getAttribute('data-action');
-                
+
                 if (action === 'download') {
                     window.location.href = `/api/system/backup/download/${backupId}`;
                 } else if (action === 'restore') {
@@ -610,12 +612,12 @@
                 }
             });
         });
-        
+
         // Save backup settings
         document.getElementById('saveBackupSettingsBtn').addEventListener('click', function() {
             const backupType = document.getElementById('backupType').value;
             const backupStorage = document.getElementById('backupStorage').value;
-            
+
             fetch('/api/system/backup/settings', {
                 method: 'POST',
                 headers: {
@@ -639,13 +641,13 @@
                 alert('An error occurred while trying to save backup settings.');
             });
         });
-        
+
         // Create backup now
         document.getElementById('createBackupNowBtn').addEventListener('click', function() {
             if (confirm('Are you sure you want to create a backup now?')) {
                 this.disabled = true;
                 this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating backup...';
-                
+
                 fetch('/api/system/backup/create', {
                     method: 'POST'
                 })
@@ -653,7 +655,7 @@
                 .then(data => {
                     this.disabled = false;
                     this.innerHTML = '<i class="bi bi-cloud-upload"></i> Create Backup Now';
-                    
+
                     if (data.success) {
                         alert('Backup created successfully.');
                         location.reload();
@@ -664,132 +666,77 @@
                 .catch(error => {
                     console.error('Error creating backup:', error);
                     alert('An error occurred while trying to create a backup.');
-                    
+
                     this.disabled = false;
                     this.innerHTML = '<i class="bi bi-cloud-upload"></i> Create Backup Now';
                 });
             }
         });
-    </script>
-    <!-- Добавьте этот скрипт перед закрывающим тегом </body> -->
-<script>
-    // Обработчик формы переинициализации
-    document.addEventListener('DOMContentLoaded', function() {
-        const reinitForm = document.getElementById('reinitializeForm');
-        
-        if (reinitForm) {
-            reinitForm.addEventListener('submit', function(e) {
-                if (confirm('Are you sure you want to reinitialize the system? This may take some time.')) {
-                    // Показываем индикатор прогресса
-                    const progressContainer = document.getElementById('reinitialization-progress');
-                    progressContainer.style.display = 'block';
-                    
-                    // Блокируем кнопку
-                    const submitButton = this.querySelector('button[type="submit"]');
-                    submitButton.disabled = true;
-                    
-                    // Продолжаем отправку формы
-                    return true;
-                } else {
-                    // Отменяем отправку формы
-                    e.preventDefault();
-                    return false;
-                }
-            });
-        }
-    });
-    
-    // Сохранение порогов
-    document.getElementById('saveThresholdsBtn').addEventListener('click', function() {
-        const matchingThreshold = document.getElementById('matchingThreshold').value;
-        const spoofingThreshold = document.getElementById('spoofingThreshold').value;
-        
-        // Блокируем кнопку на время запроса
-        this.disabled = true;
-        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
-        
-        fetch('/api/system/thresholds', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                matching_threshold: matchingThreshold,
-                spoofing_threshold: spoofingThreshold
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            this.disabled = false;
-            this.innerHTML = '<i class="bi bi-save"></i> Save Thresholds';
-            
-            if (data.success) {
-                alert('Thresholds saved successfully.');
-            } else {
-                alert(`Error: ${data.message}`);
-            }
-        })
-        .catch(error => {
-            console.error('Error saving thresholds:', error);
-            alert('An error occurred while trying to save thresholds.');
-            
-            this.disabled = false;
-            this.innerHTML = '<i class="bi bi-save"></i> Save Thresholds';
-        });
-    });
-    
-    // Отслеживание статуса переинициализации (опционально)
-    function trackReinitializationStatus() {
-        const progressContainer = document.getElementById('reinitialization-progress');
-        if (!progressContainer || progressContainer.style.display === 'none') return;
-        
-        const progressBar = progressContainer.querySelector('.progress-bar');
-        const statusText = progressContainer.querySelector('p');
-        
-        // Проверяем статус раз в секунду
-        const checkStatus = () => {
-            fetch('/api/system/reinitialize/status')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.in_progress) {
-                        // Обновляем прогресс
-                        progressBar.style.width = `${data.progress * 100}%`;
-                        statusText.textContent = `Reinitialization: ${data.current_step || 'in progress'} (${Math.round(data.progress * 100)}%)`;
-                        // Повторяем проверку через 1 секунду
-                        setTimeout(checkStatus, 1000);
-                    } else if (data.status === 'completed') {
-                        // Успешное завершение
-                        progressBar.classList.remove('progress-bar-animated');
-                        progressBar.classList.add('bg-success');
-                        progressBar.style.width = '100%';
-                        statusText.textContent = 'Reinitialization completed successfully!';
-                        // Перезагружаем страницу через 2 секунды
-                        setTimeout(() => window.location.reload(), 2000);
+
+        // Reinitialization form handler
+        document.addEventListener('DOMContentLoaded', function() {
+            const reinitForm = document.getElementById('reinitializeForm');
+
+            if (reinitForm) {
+                reinitForm.addEventListener('submit', function(e) {
+                    if (confirm('Are you sure you want to reinitialize the system? This may take some time.')) {
+                        // Show progress indicator
+                        const progressContainer = document.getElementById('reinitialization-progress');
+                        progressContainer.style.display = 'block';
+
+                        // Disable the button
+                        const submitButton = this.querySelector('button[type="submit"]');
+                        submitButton.disabled = true;
+
+                        // Continue form submission
+                        return true;
                     } else {
-                        // Ошибка при переинициализации
-                        progressBar.classList.remove('progress-bar-animated');
-                        progressBar.classList.add('bg-danger');
-                        progressBar.style.width = '100%';
-                        statusText.textContent = `Reinitialization error: ${data.error || 'unknown error'}`;
+                        // Cancel form submission
+                        e.preventDefault();
+                        return false;
                     }
-                })
-                .catch(error => {
-                    console.error('Error getting reinitialization status:', error);
-                    progressBar.classList.add('bg-danger');
-                    statusText.textContent = 'Error getting reinitialization status';
                 });
-        };
-        
-        // Запускаем проверку статуса
-        checkStatus();
-    }
-    
-    // Запускаем отслеживание статуса, если форма была отправлена
-    document.addEventListener('DOMContentLoaded', function() {
-        if (document.getElementById('reinitialization-progress').style.display !== 'none') {
-            trackReinitializationStatus();
-        }
-    });
-</script>
+            }
+        });
+
+        // Save thresholds
+        document.getElementById('saveThresholdsBtn').addEventListener('click', function() {
+            const matchingThreshold = document.getElementById('matchingThreshold').value;
+            const spoofingThreshold = document.getElementById('spoofingThreshold').value;
+
+            // Disable button during request
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+
+            fetch('/api/system/thresholds', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    matching_threshold: matchingThreshold,
+                    spoofing_threshold: spoofingThreshold
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                this.disabled = false;
+                this.innerHTML = '<i class="bi bi-save"></i> Save Thresholds';
+
+                if (data.success) {
+                    alert('Thresholds saved successfully.');
+                } else {
+                    alert(`Error: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error saving thresholds:', error);
+                alert('An error occurred while trying to save thresholds.');
+
+                this.disabled = false;
+                this.innerHTML = '<i class="bi bi-save"></i> Save Thresholds';
+            });
+        });
+    </script>
 </body>
 </html>

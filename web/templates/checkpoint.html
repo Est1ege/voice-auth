@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Система голосовой аутентификации</title>
+    <title>Voice Authentication System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.6.2/css/bootstrap.min.css">
     <style>
         body {
@@ -230,7 +230,7 @@
                 box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
             }
         }
-        /* Скрытые элементы */
+        /* Hidden elements */
         .recordings-section {
             display: none;
         }
@@ -242,27 +242,27 @@
 <body>
     <div class="header">
         <div class="container">
-            <h1>Система голосовой аутентификации</h1>
+            <h1>Voice Authentication System</h1>
         </div>
     </div>
 
     <div class="container">
         <div class="auth-container">
             <div class="status-display">
-                <h2 id="statusTitle">Готов к работе</h2>
-                <p id="statusText" class="status-text">Для авторизации нажмите кнопку "Начать запись" и произнесите контрольную фразу</p>
+                <h2 id="statusTitle">Ready</h2>
+                <p id="statusText" class="status-text">To authenticate, click "Start Recording" and speak the control phrase</p>
                 <div class="system-status">
                     <div id="systemStatusIndicator" class="status-indicator online"></div>
-                    <span id="systemStatusText">Система онлайн</span>
-                    <span class="anti-spoof-badge">Анти-спуфинг активен</span>
+                    <span id="systemStatusText">System online</span>
+                    <span class="anti-spoof-badge">Anti-spoofing active</span>
                 </div>
             </div>
 
             <div class="auth-info">
-                <p><strong>Информация о системе:</strong></p>
-                <p>Текущий порог распознавания: 0.7 (70%)</p>
-                <p>Режим сохранения аудио: отключен</p>
-                <p>Защита от имитации голоса: включена</p>
+                <p><strong>System Information:</strong></p>
+                <p>Current recognition threshold: 0.7 (70%)</p>
+                <p>Audio saving mode: disabled</p>
+                <p>Voice spoofing protection: enabled</p>
             </div>
 
             <div class="mic-container">
@@ -274,7 +274,7 @@
                 </div>
 
                 <div class="audio-levels" id="audioLevels">
-                    <!-- Динамические полоски уровня аудио будут добавлены через JavaScript -->
+                    <!-- Dynamic audio level bars will be added via JavaScript -->
                 </div>
 
                 <div class="timer" id="timer">00:00</div>
@@ -282,40 +282,40 @@
 
             <div id="resultContainer" class="result-container">
                 <div class="result-header">
-                    <img id="userPhoto" src="/static/img/default-user.jpg" alt="Фото пользователя" class="result-photo">
+                    <img id="userPhoto" src="/static/img/default-user.jpg" alt="User Photo" class="result-photo">
                     <div class="user-details">
-                        <div id="userName" class="user-name">Имя пользователя</div>
-                        <div id="userDepartment" class="user-info">Отдел: -</div>
-                        <div id="userPosition" class="user-info">Должность: -</div>
-                        <div id="matchScore" class="match-score">Совпадение: 0%</div>
+                        <div id="userName" class="user-name">Username</div>
+                        <div id="userDepartment" class="user-info">Department: -</div>
+                        <div id="userPosition" class="user-info">Position: -</div>
+                        <div id="matchScore" class="match-score">Match: 0%</div>
                     </div>
                 </div>
 
                 <div id="accessBadgeContainer" class="text-center">
-                    <div id="accessBadge" class="access-badge">Доступ: Ожидание</div>
+                    <div id="accessBadge" class="access-badge">Access: Waiting</div>
                 </div>
             </div>
 
             <div class="control-panel">
-                <button id="recordButton" class="btn btn-primary mr-3">Начать запись</button>
-                <button id="stopButton" class="btn btn-secondary mr-3" disabled>Остановить</button>
-                <button id="saveRecordingButton" class="btn btn-success mr-3" disabled>Сохранить запись</button>
+                <button id="recordButton" class="btn btn-primary mr-3">Start Recording</button>
+                <button id="stopButton" class="btn btn-secondary mr-3" disabled>Stop</button>
+                <button id="saveRecordingButton" class="btn btn-success mr-3" disabled>Save Recording</button>
             </div>
         </div>
     </div>
 
     <footer class="text-center py-3 text-muted">
         <div class="container">
-            <p>© 2025 Система голосовой аутентификации</p>
+            <p>© 2025 Voice Authentication System</p>
         </div>
     </footer>
 
-    <!-- Аудиофайлы для уведомлений -->
+    <!-- Audio files for notifications -->
     <audio id="successSound" src="/static/sounds/success.mp3" preload="auto"></audio>
     <audio id="failureSound" src="/static/sounds/failure.mp3" preload="auto"></audio>
     <audio id="startListeningSound" src="/static/sounds/start_listening.mp3" preload="auto"></audio>
 
-    <!-- Скрипты -->
+    <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="/static/js/voice-auth.js"></script>
 </body>

@@ -1,10 +1,9 @@
-<!-- web/templates/admin/dashboard.html -->
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Панель управления - Voice Recognition System</title>
+    <title>Dashboard - Voice Authentication System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
     <style>
@@ -68,13 +67,13 @@
 <body>
     <header class="navbar navbar-dark bg-dark fixed-top">
         <div class="container-fluid">
-            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Authentication System</a>
             <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="d-flex align-items-center">
-                <span class="text-white me-2">{{ username }}</span>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+                <span class="text-white me-2">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
             </div>
         </div>
     </header>
@@ -85,28 +84,38 @@
                 <div class="sidebar-sticky">
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link active" href="{{ url_for('admin_dashboard') }}">
-                                <i class="bi bi-speedometer2"></i> Панель управления
+                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                <i class="bi bi-speedometer2"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('manage_users') }}">
-                                <i class="bi bi-people"></i> Пользователи
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('access_logs') }}">
-                                <i class="bi bi-list-check"></i> Журнал доступа
+                                <i class="bi bi-list-check"></i> Access Logs
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('training_dashboard') }}">
-                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                                <i class="bi bi-gpu-card"></i> Model Training
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('system_status') }}">
-                                <i class="bi bi-gear"></i> Состояние системы
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Export/Import
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
+                                <i class="bi bi-mic"></i> Auth Monitor
                             </a>
                         </li>
                     </ul>
@@ -115,17 +124,17 @@
 
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                    <h1 class="h2">Панель управления</h1>
+                    <h1 class="h2">Dashboard</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">
                         <div class="btn-group me-2">
                             <a href="{{ url_for('add_user') }}" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-person-plus"></i> Добавить пользователя
+                                <i class="bi bi-person-plus"></i> Add User
                             </a>
                         </div>
                     </div>
                 </div>
 
-                <!-- Статистика -->
+                <!-- Statistics -->
                 <div class="row">
                     <div class="col-xl-3 col-md-6 mb-4">
                         <div class="card card-dashboard border-0 shadow h-100 py-2">
@@ -133,7 +142,7 @@
                                 <div class="row no-gutters align-items-center">
                                     <div class="col mr-2">
                                         <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
-                                            Всего пользователей</div>
+                                            Total Users</div>
                                         <div class="h5 mb-0 font-weight-bold text-gray-800">{{ users_count|default(6) }}</div>
                                     </div>
                                     <div class="col-auto">
@@ -150,7 +159,7 @@
                                 <div class="row no-gutters align-items-center">
                                     <div class="col mr-2">
                                         <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
-                                            Активных пользователей</div>
+                                            Active Users</div>
                                         <div class="h5 mb-0 font-weight-bold text-gray-800">{{ active_users_count|default(6) }}</div>
                                     </div>
                                     <div class="col-auto">
@@ -167,7 +176,7 @@
                                 <div class="row no-gutters align-items-center">
                                     <div class="col mr-2">
                                         <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
-                                            Входов сегодня</div>
+                                            Logins Today</div>
                                         <div class="h5 mb-0 font-weight-bold text-gray-800">{{ logins_today|default(12) }}</div>
                                     </div>
                                     <div class="col-auto">
@@ -184,7 +193,7 @@
                                 <div class="row no-gutters align-items-center">
                                     <div class="col mr-2">
                                         <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
-                                            Попыток спуфинга</div>
+                                            Spoofing Attempts</div>
                                         <div class="h5 mb-0 font-weight-bold text-gray-800">{{ spoofing_attempts|default(0) }}</div>
                                     </div>
                                     <div class="col-auto">
@@ -196,23 +205,23 @@
                     </div>
                 </div>
 
-                <!-- Графики и статистика -->
+                <!-- Charts and Statistics -->
                 <div class="row mb-4">
-                    <!-- График активности -->
+                    <!-- Activity Chart -->
                     <div class="col-lg-8 mb-4">
                         <div class="card shadow">
                             <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                                <h6 class="m-0 font-weight-bold">Активность входов за последние 7 дней</h6>
+                                <h6 class="m-0 font-weight-bold">Login Activity (Last 7 Days)</h6>
                                 <div class="dropdown no-arrow">
                                     <a class="dropdown-toggle" href="#" role="button" id="dropdownMenuLink"
                                         data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                         <i class="bi bi-three-dots-vertical"></i>
                                     </a>
                                     <div class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownMenuLink">
-                                        <a class="dropdown-item" href="#">Экспорт данных</a>
-                                        <a class="dropdown-item" href="#">Сменить график</a>
+                                        <a class="dropdown-item" href="#">Export Data</a>
+                                        <a class="dropdown-item" href="#">Change Chart</a>
                                         <div class="dropdown-divider"></div>
-                                        <a class="dropdown-item" href="#">Подробная статистика</a>
+                                        <a class="dropdown-item" href="#">Detailed Statistics</a>
                                     </div>
                                 </div>
                             </div>
@@ -224,11 +233,11 @@
                         </div>
                     </div>
 
-                    <!-- Круговая диаграмма распределения сущностей -->
+                    <!-- Access Distribution Pie Chart -->
                     <div class="col-lg-4 mb-4">
                         <div class="card shadow">
                             <div class="card-header py-3">
-                                <h6 class="m-0 font-weight-bold">Распределение доступа</h6>
+                                <h6 class="m-0 font-weight-bold">Access Distribution</h6>
                             </div>
                             <div class="card-body">
                                 <div class="chart-pie pt-4 pb-2">
@@ -236,13 +245,13 @@
                                 </div>
                                 <div class="mt-4 text-center small">
                                     <span class="me-2">
-                                        <i class="bi bi-circle-fill text-primary"></i> Успешные входы
+                                        <i class="bi bi-circle-fill text-primary"></i> Successful Logins
                                     </span>
                                     <span class="me-2">
-                                        <i class="bi bi-circle-fill text-danger"></i> Отказы в доступе
+                                        <i class="bi bi-circle-fill text-danger"></i> Access Denied
                                     </span>
                                     <span>
-                                        <i class="bi bi-circle-fill text-warning"></i> Попытки спуфинга
+                                        <i class="bi bi-circle-fill text-warning"></i> Spoofing Attempts
                                     </span>
                                 </div>
                             </div>
@@ -250,8 +259,8 @@
                     </div>
                 </div>
 
-                <!-- Быстрые ссылки -->
-                <h2 class="h4 mb-3">Быстрый доступ</h2>
+                <!-- Quick Links -->
+                <h2 class="h4 mb-3">Quick Access</h2>
                 <div class="row">
                     <div class="col-lg-3 col-md-6 mb-4">
                         <div class="card quick-link-card shadow h-100">
@@ -259,60 +268,60 @@
                                 <div class="mb-3">
                                     <i class="bi bi-person-plus-fill" style="font-size: 2.5rem; color: #007bff;"></i>
                                 </div>
-                                <h5 class="card-title">Добавить пользователя</h5>
-                                <p class="card-text">Создание нового пользователя с голосовой авторизацией</p>
-                                <a href="{{ url_for('add_user') }}" class="btn btn-primary">Перейти</a>
+                                <h5 class="card-title">Add User</h5>
+                                <p class="card-text">Create a new user with voice authentication</p>
+                                <a href="{{ url_for('add_user') }}" class="btn btn-primary">Go</a>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="col-lg-3 col-md-6 mb-4">
                         <div class="card quick-link-card shadow h-100">
                             <div class="card-body text-center">
                                 <div class="mb-3">
                                     <i class="bi bi-list-check" style="font-size: 2.5rem; color: #28a745;"></i>
                                 </div>
-                                <h5 class="card-title">Журнал доступа</h5>
-                                <p class="card-text">Просмотр истории попыток авторизации в системе</p>
-                                <a href="{{ url_for('access_logs') }}" class="btn btn-success">Перейти</a>
+                                <h5 class="card-title">Access Logs</h5>
+                                <p class="card-text">View authentication attempt history</p>
+                                <a href="{{ url_for('access_logs') }}" class="btn btn-success">Go</a>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="col-lg-3 col-md-6 mb-4">
                         <div class="card quick-link-card shadow h-100">
                             <div class="card-body text-center">
                                 <div class="mb-3">
                                     <i class="bi bi-gpu-card" style="font-size: 2.5rem; color: #fd7e14;"></i>
                                 </div>
-                                <h5 class="card-title">Тренировка моделей</h5>
-                                <p class="card-text">Обучение моделей распознавания и анти-спуфинга</p>
-                                <a href="{{ url_for('training_dashboard') }}" class="btn btn-warning">Перейти</a>
+                                <h5 class="card-title">Model Training</h5>
+                                <p class="card-text">Train recognition and anti-spoofing models</p>
+                                <a href="{{ url_for('training_dashboard') }}" class="btn btn-warning">Go</a>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="col-lg-3 col-md-6 mb-4">
                         <div class="card quick-link-card shadow h-100">
                             <div class="card-body text-center">
                                 <div class="mb-3">
                                     <i class="bi bi-gear-fill" style="font-size: 2.5rem; color: #6c757d;"></i>
                                 </div>
-                                <h5 class="card-title">Состояние системы</h5>
-                                <p class="card-text">Мониторинг работы компонентов системы</p>
-                                <a href="{{ url_for('system_status') }}" class="btn btn-secondary">Перейти</a>
+                                <h5 class="card-title">System Status</h5>
+                                <p class="card-text">Monitor system component status</p>
+                                <a href="{{ url_for('system_status') }}" class="btn btn-secondary">Go</a>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Последние события -->
-                <h2 class="h4 mb-3">Последние события</h2>
+                <!-- Recent Events -->
+                <h2 class="h4 mb-3">Recent Events</h2>
                 <div class="card shadow mb-4">
                     <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                        <h6 class="m-0 font-weight-bold">События системы</h6>
+                        <h6 class="m-0 font-weight-bold">System Events</h6>
                         <a href="{{ url_for('access_logs') }}" class="btn btn-sm btn-primary">
-                            Все события <i class="bi bi-arrow-right"></i>
+                            All Events <i class="bi bi-arrow-right"></i>
                         </a>
                     </div>
                     <div class="card-body p-0">
@@ -320,10 +329,10 @@
                             <table class="table table-striped table-hover mb-0">
                                 <thead>
                                     <tr>
-                                        <th scope="col">Дата и время</th>
-                                        <th scope="col">Событие</th>
-                                        <th scope="col">Пользователь</th>
-                                        <th scope="col">Статус</th>
+                                        <th scope="col">Date and Time</th>
+                                        <th scope="col">Event</th>
+                                        <th scope="col">User</th>
+                                        <th scope="col">Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -333,15 +342,15 @@
                                             <td>{{ log.timestamp|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') }}</td>
                                             <td>
                                                 {% if log.event_type == 'authorization_successful' %}
-                                                <span class="badge bg-success">Успешная авторизация</span>
+                                                <span class="badge bg-success">Successful Auth</span>
                                                 {% elif log.event_type == 'authorization_attempt' %}
-                                                <span class="badge bg-warning text-dark">Попытка авторизации</span>
+                                                <span class="badge bg-warning text-dark">Auth Attempt</span>
                                                 {% elif log.event_type == 'spoofing_attempt' %}
-                                                <span class="badge bg-danger">Попытка спуфинга</span>
+                                                <span class="badge bg-danger">Spoofing Attempt</span>
                                                 {% elif log.event_type == 'user_created' %}
-                                                <span class="badge bg-info">Создание пользователя</span>
+                                                <span class="badge bg-info">User Created</span>
                                                 {% elif log.event_type == 'user_activated' %}
-                                                <span class="badge bg-primary">Активация пользователя</span>
+                                                <span class="badge bg-primary">User Activated</span>
                                                 {% else %}
                                                 <span class="badge bg-secondary">{{ log.event_type }}</span>
                                                 {% endif %}
@@ -349,9 +358,9 @@
                                             <td>{{ log.user_name if log.user_name else "—" }}</td>
                                             <td>
                                                 {% if log.success %}
-                                                <span class="badge bg-success">Успешно</span>
+                                                <span class="badge bg-success">Success</span>
                                                 {% else %}
-                                                <span class="badge bg-danger">Отказано</span>
+                                                <span class="badge bg-danger">Denied</span>
                                                 {% endif %}
                                             </td>
                                         </tr>
@@ -359,21 +368,21 @@
                                     {% else %}
                                         <tr>
                                             <td>21.04.2025 10:23:45</td>
-                                            <td><span class="badge bg-success">Успешная авторизация</span></td>
-                                            <td>Иван Петров</td>
-                                            <td><span class="badge bg-success">Успешно</span></td>
+                                            <td><span class="badge bg-success">Successful Auth</span></td>
+                                            <td>John Smith</td>
+                                            <td><span class="badge bg-success">Success</span></td>
                                         </tr>
                                         <tr>
                                             <td>21.04.2025 09:15:32</td>
-                                            <td><span class="badge bg-info">Создание пользователя</span></td>
-                                            <td>Анна Сидорова</td>
-                                            <td><span class="badge bg-success">Успешно</span></td>
+                                            <td><span class="badge bg-info">User Created</span></td>
+                                            <td>Anna Johnson</td>
+                                            <td><span class="badge bg-success">Success</span></td>
                                         </tr>
                                         <tr>
                                             <td>21.04.2025 08:45:19</td>
-                                            <td><span class="badge bg-warning text-dark">Попытка авторизации</span></td>
-                                            <td>Неизвестный</td>
-                                            <td><span class="badge bg-danger">Отказано</span></td>
+                                            <td><span class="badge bg-warning text-dark">Auth Attempt</span></td>
+                                            <td>Unknown</td>
+                                            <td><span class="badge bg-danger">Denied</span></td>
                                         </tr>
                                     {% endif %}
                                 </tbody>
@@ -388,16 +397,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script>
-        // Создание графиков
+        // Create charts
         document.addEventListener('DOMContentLoaded', function() {
-            // График активности входов
+            // Login activity chart
             const activityCtx = document.getElementById('activityChart').getContext('2d');
             const activityChart = new Chart(activityCtx, {
                 type: 'line',
                 data: {
-                    labels: ['15 Апр', '16 Апр', '17 Апр', '18 Апр', '19 Апр', '20 Апр', '21 Апр'],
+                    labels: ['Apr 15', 'Apr 16', 'Apr 17', 'Apr 18', 'Apr 19', 'Apr 20', 'Apr 21'],
                     datasets: [{
-                        label: 'Количество входов',
+                        label: 'Number of Logins',
                         data: [12, 15, 10, 8, 14, 9, 12],
                         backgroundColor: 'rgba(0, 123, 255, 0.2)',
                         borderColor: 'rgba(0, 123, 255, 1)',
@@ -427,13 +436,13 @@
                     }
                 }
             });
-            
-            // Круговая диаграмма распределения доступа
+
+            // Access distribution pie chart
             const distributionCtx = document.getElementById('accessDistributionChart').getContext('2d');
             const distributionChart = new Chart(distributionCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Успешные входы', 'Отказы в доступе', 'Попытки спуфинга'],
+                    labels: ['Successful Logins', 'Access Denied', 'Spoofing Attempts'],
                     datasets: [{
                         data: [85, 12, 3],
                         backgroundColor: [

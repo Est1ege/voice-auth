@@ -19,7 +19,6 @@ import subprocess
 from pathlib import Path
 import asyncio
 import logging
-import requests
 from bson import ObjectId
 
 

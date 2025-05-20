@@ -447,8 +447,11 @@ async def detect_spoofing(request: AudioRequest):
         }
 
 # В app.py - более продвинутый подход с проверкой качества аудио
+# Улучшенная функция для extract_embedding - повышает качество извлекаемых эмбеддингов
+
 @app.post("/extract_embedding", response_model=EmbeddingResponse)
 async def extract_embedding(request: AudioRequest):
+    """Улучшенное извлечение эмбеддинга из аудиофайла для более надежного распознавания"""
     global voice_model
 
     logger.info(f"Extracting embedding from file: {request.audio_path}")
@@ -463,13 +466,44 @@ async def extract_embedding(request: AudioRequest):
             logger.error(f"Audio file not found: {request.audio_path}")
             raise HTTPException(status_code=404, detail=f"Audio file not found: {request.audio_path}")
 
-        # Вызываем extract_embedding напрямую без проверки качества
-        # (проверка будет выполнена внутри метода)
+        # Предварительная проверка качества аудио
+        try:
+            import librosa
+            waveform, sr = librosa.load(request.audio_path, sr=16000, mono=True)
+
+            # Проверка наличия речи (энергии сигнала)
+            energy = np.mean(np.abs(waveform))
+            if energy < 0.01:  # Очень тихое аудио
+                logger.warning(f"Audio file has very low energy: {energy:.6f}")
+                # Предварительная нормализация
+                waveform = librosa.util.normalize(waveform) * 0.95
+                # Сохраняем обратно с усилением
+                import soundfile as sf
+                temp_path = request.audio_path + ".normalized.wav"
+                sf.write(temp_path, waveform, sr)
+                # Используем нормализованную версию
+                logger.info(f"Created normalized version at: {temp_path}")
+                request.audio_path = temp_path
+        except Exception as audio_check_error:
+            logger.warning(f"Error during audio quality check: {audio_check_error}")
+            # Продолжаем с оригинальным файлом
+
+        # Вызываем улучшенный метод извлечения эмбеддинга
         embedding = voice_model.extract_embedding(request.audio_path)
 
         if embedding is None:
             raise HTTPException(status_code=400,
                                 detail="Could not extract embedding from audio file. Check audio quality.")
+
+        # Двойная проверка качества эмбеддинга
+        if np.any(np.isnan(embedding)) or np.any(np.isinf(embedding)):
+            logger.error(f"Extracted embedding contains NaN or Inf values")
+            raise HTTPException(status_code=400, detail="Extracted embedding contains invalid values")
+
+        # Нормализация эмбеддинга (для дополнительной надежности)
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
 
         logger.info(f"Extracted embedding with shape {embedding.shape}")
 
@@ -481,7 +515,6 @@ async def extract_embedding(request: AudioRequest):
     except Exception as e:
         logger.error(f"Error extracting embedding: {e}")
         raise HTTPException(status_code=500, detail=f"Error extracting embedding: {str(e)}")
-
 @app.get("/list_user_ids")
 async def list_user_ids():
     """
@@ -505,9 +538,11 @@ async def list_user_ids():
             "message": str(e)
         }
 
+
 @app.post("/match_user", response_model=MatchResponse)
 async def match_user(request: MatchRequest):
-    global user_embeddings
+    """Улучшенное сопоставление эмбеддинга с пользователями"""
+    global voice_model, user_embeddings
 
     try:
         # Преобразование входящего эмбеддинга в numpy массив
@@ -525,11 +560,15 @@ async def match_user(request: MatchRequest):
         best_match_user_id = None
         best_match_similarity = 0.0
 
-        # Пониженный порог для тестирования
-        match_threshold = 0.5
+        # Снижаем порог для повышения чувствительности
+        match_threshold = 0.4  # Было 0.5
 
+        # Обходим всех пользователей и их эмбеддинги
         for user_id, embeddings in user_embeddings.items():
             logger.info(f"Comparing with user {user_id}: {len(embeddings)} embeddings")
+
+            # Для каждого пользователя находим лучшее совпадение среди всех его эмбеддингов
+            user_best_similarity = 0.0
 
             for i, user_embedding in enumerate(embeddings):
                 try:
@@ -539,25 +578,18 @@ async def match_user(request: MatchRequest):
                             f"Dimension mismatch for user {user_id}, embedding {i}: {user_embedding.shape} vs {input_embedding.shape}")
                         continue
 
-                    # Нормализация эмбеддингов перед сравнением
-                    input_norm = np.linalg.norm(input_embedding)
-                    user_norm = np.linalg.norm(user_embedding)
-
-                    if input_norm < 1e-10 or user_norm < 1e-10:
-                        logger.warning(f"Near-zero norm for embedding comparison: input={input_norm}, user={user_norm}")
-                        continue
-
-                    input_normalized = input_embedding / input_norm
-                    user_normalized = user_embedding / user_norm
-
-                    # Вычисление косинусного сходства
-                    cosine_similarity = np.dot(input_normalized, user_normalized)
-
-                    # Преобразование в диапазон [0, 1]
-                    similarity = float((cosine_similarity + 1) / 2)
+                    # Используем улучшенное сравнение эмбеддингов
+                    similarity, _ = voice_model.improved_compare_embeddings(
+                        input_embedding, user_embedding, threshold=match_threshold
+                    )
 
                     logger.info(f"User {user_id}, embedding {i}: similarity={similarity:.4f}")
 
+                    # Сохраняем лучшее совпадение для этого пользователя
+                    if similarity > user_best_similarity:
+                        user_best_similarity = similarity
+
+                    # Также обновляем глобальное лучшее совпадение
                     if similarity > best_match_similarity:
                         best_match_similarity = similarity
                         best_match_user_id = user_id
@@ -568,6 +600,13 @@ async def match_user(request: MatchRequest):
 
         # Пороговое значение для определения совпадения
         match_found = best_match_similarity >= match_threshold
+
+        # Эвристика: если у пользователя мало образцов голоса, снижаем порог
+        if best_match_user_id and not match_found:
+            user_samples_count = len(user_embeddings.get(best_match_user_id, []))
+            if user_samples_count < 5 and best_match_similarity >= 0.35:
+                logger.info(f"Lowering threshold for user with few samples: {user_samples_count}")
+                match_found = True
 
         logger.info(
             f"Best match: user_id={best_match_user_id}, similarity={best_match_similarity:.4f}, match_found={match_found}")
@@ -585,7 +624,6 @@ async def match_user(request: MatchRequest):
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/update_model")
 async def update_model(request: UserEmbeddingRequest, background_tasks: BackgroundTasks):
     global user_embeddings
@@ -720,7 +758,7 @@ async def train_anti_spoofing(background_tasks: BackgroundTasks):
 # Заменить текущую функцию в ml_model/app.py на эту
 @app.post("/match_user_detailed")
 async def match_user_detailed(request: dict):
-    """Подробное сравнение эмбеддинга с базой пользователей с улучшенной надежностью"""
+    """Улучшенное подробное сравнение эмбеддинга с базой пользователей"""
     global user_embeddings, voice_model
 
     try:
@@ -787,22 +825,19 @@ async def match_user_detailed(request: dict):
                 "message": "No users registered in the system"
             }
 
-        # Поиск наилучшего соответствия с более гибким порогом
+        # Поиск наилучшего соответствия
         best_match_user_id = None
         best_match_similarity = 0.0
+        best_match_raw_similarity = 0.0
         best_match_comparison = None
         all_results = []
 
-        # Динамически определяем порог в зависимости от количества пользователей
-        # Используем более высокий порог для избежания ложных срабатываний
-        adaptive_threshold = max(0.5, min(0.75, 0.45 + 0.02 * len(user_embeddings)))
-        logger.info(f"Using adaptive threshold: {adaptive_threshold:.2f} for {len(user_embeddings)} users")
-
-        # Создаем словарь для хранения данных о совпадениях по пользователям
-        user_match_data = {}
+        # Устанавливаем умеренный порог
+        base_threshold = 0.45  # Понижен для большей чувствительности, но не слишком низкий
 
         for user_id, embeddings in user_embeddings.items():
-            user_best_similarity = 0
+            user_best_similarity = 0.0
+            user_best_raw_similarity = 0.0
             user_best_comparison = None
             user_all_scores = []
 
@@ -837,84 +872,95 @@ async def match_user_detailed(request: dict):
                     # Косинусное сходство нормализованных векторов
                     raw_similarity = np.dot(np_embedding, user_embedding_norm)
 
-                    # Улучшенное преобразование сходства с более агрессивными параметрами
-                    def sigmoid_transform(x, center=0.75, sharpness=12):
-                        """Улучшенное сигмоидальное преобразование для усиления различий"""
-                        return 1.0 / (1.0 + np.exp(-sharpness * (x - center)))
-
-                    adjusted_similarity = sigmoid_transform(raw_similarity)
-
-                    # Проверка на случайное совпадение с более низким порогом
-                    if abs(raw_similarity) < 0.25:
-                        continue
-
-                    # Нормализация в диапазон [0, 1] для обратной совместимости
+                    # Преобразование косинусного сходства в диапазон [0, 1]
                     cosine_similarity = (raw_similarity + 1) / 2
+
+                    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ - более мягкое усиление сходства
+                    # Эта функция обеспечит умеренное увеличение значений в середине диапазона
+                    def balanced_enhancement(x):
+                        """Балансированное усиление сходства, работающее для всех пользователей."""
+                        # x уже в диапазоне [0, 1]
+
+                        # Мягкое усиление средних значений
+                        if x < 0.3:
+                            return x * 0.8  # Немного уменьшаем очень низкие значения
+                        elif x < 0.45:
+                            return x * 1.1  # Немного усиливаем ниже среднего
+                        elif x < 0.65:
+                            return 0.495 + (x - 0.45) * 1.2  # Умеренно усиливаем средние
+                        else:
+                            return 0.735 + (x - 0.65) * 0.9  # Слегка сжимаем высокие
+
+                    adjusted_similarity = balanced_enhancement(cosine_similarity)
+
+                    # Проверка на случайное совпадение
+                    if cosine_similarity < 0.3:  # Умеренный порог для фильтрации
+                        continue
 
                     # Сохраняем результат в понятном формате
                     comparison = {
                         "raw_similarity": float(raw_similarity),
-                        "adjusted_similarity": float(adjusted_similarity),
                         "cosine_similarity": float(cosine_similarity),
+                        "adjusted_similarity": float(adjusted_similarity),
                         "weighted_score": float(adjusted_similarity)  # Основной показатель
                     }
 
                     # Сохраняем все сравнения для этого пользователя
                     user_all_scores.append({
                         "index": i,
-                        "embedding": user_embedding,
                         "similarity": adjusted_similarity,
+                        "raw_similarity": raw_similarity,
                         "comparison": comparison
                     })
 
                     # Логируем каждое сравнение для отладки
-                    logger.info(f"User {user_id}, emb {i}: raw={raw_similarity:.4f}, adj={adjusted_similarity:.4f}")
+                    logger.info(
+                        f"User {user_id}, emb {i}: raw={raw_similarity:.4f}, cos={cosine_similarity:.4f}, adj={adjusted_similarity:.4f}")
 
                     # Сохраняем лучшее соответствие для этого пользователя
                     if adjusted_similarity > user_best_similarity:
                         user_best_similarity = adjusted_similarity
+                        user_best_raw_similarity = raw_similarity
                         user_best_comparison = comparison
 
                 except Exception as e:
                     logger.warning(f"Error comparing with user {user_id}, emb {i}: {e}")
                     continue
 
-            # Применяем дополнительную проверку на согласованность эмбеддингов
-            if len(user_all_scores) >= 3 and user_best_similarity > 0.6:
+            # Умеренный бонус за согласованность - с более низким порогом активации
+            if len(user_all_scores) >= 2:  # Достаточно даже 2 согласованных образцов
                 # Сортируем по уменьшению сходства
                 user_all_scores.sort(key=lambda x: x["similarity"], reverse=True)
 
-                # Берем топ-3 лучших совпадения
-                top_scores = user_all_scores[:3]
+                # Берем топ-2 лучших совпадения (или меньше, если недостаточно образцов)
+                top_scores_count = min(len(user_all_scores), 2)
+                top_scores = user_all_scores[:top_scores_count]
 
-                # Проверяем разницу между ними - меньшая разница = более надежное совпадение
-                if (top_scores[0]["similarity"] - top_scores[-1]["similarity"]) < 0.15:
-                    # Эмбеддинги согласованы, увеличиваем оценку
-                    consistency_bonus = 0.08  # 8% бонус
-                    adjusted_similarity = min(1.0, user_best_similarity + consistency_bonus)
-                    logger.info(f"Applied consistency bonus for user {user_id}: +{consistency_bonus:.2f}")
-                    user_best_similarity = adjusted_similarity
+                # Если есть хотя бы 2 похожих эмбеддинга - даем бонус
+                if top_scores_count >= 2 and top_scores[0]["similarity"] > 0.4:
+                    # Проверяем насколько они близки друг к другу
+                    if (top_scores[0]["similarity"] - top_scores[-1]["similarity"]) < 0.2:
+                        # Небольшой бонус за согласованность
+                        consistency_bonus = 0.05
+                        adjusted_similarity = min(0.95, user_best_similarity + consistency_bonus)
+                        logger.info(f"Applied modest consistency bonus for user {user_id}: +{consistency_bonus:.2f}")
+                        user_best_similarity = adjusted_similarity
 
             # Добавляем лучшее совпадение пользователя, если оно было найдено
-            if user_best_comparison:
-                # Сохраняем данные о совпадениях этого пользователя
-                user_match_data[user_id] = {
-                    "similarity": user_best_similarity,
-                    "comparison": user_best_comparison,
-                    "valid_embedding_count": len(valid_embeddings),
-                    "match_scores": user_all_scores
-                }
-
+            if user_best_comparison and user_best_similarity > 0:
                 # Добавляем лучшее сходство пользователя в общие результаты
                 all_results.append({
                     "user_id": user_id,
                     "similarity": user_best_similarity,
-                    "comparison": user_best_comparison
+                    "raw_similarity": user_best_raw_similarity,
+                    "comparison": user_best_comparison,
+                    "sample_count": len(valid_embeddings)
                 })
 
                 # Обновляем общее лучшее совпадение
                 if user_best_similarity > best_match_similarity:
                     best_match_similarity = user_best_similarity
+                    best_match_raw_similarity = user_best_raw_similarity
                     best_match_user_id = user_id
                     best_match_comparison = user_best_comparison
 
@@ -926,27 +972,26 @@ async def match_user_detailed(request: dict):
         for result in all_results[:3]:  # Выводим топ-3 результата
             top_candidates.append({
                 "user_id": result["user_id"],
-                "similarity": float(result["similarity"])
+                "similarity": float(result["similarity"]),
+                "sample_count": result["sample_count"]
             })
-            logger.info(f"Match candidate: user_id={result['user_id']}, similarity={result['similarity']:.4f}")
+            logger.info(
+                f"Match candidate: user_id={result['user_id']}, similarity={result['similarity']:.4f}, samples={result['sample_count']}")
 
-        # Анализ конкурирующих кандидатов
-        if len(all_results) >= 2:
-            # Если разница между двумя лучшими кандидатами очень мала, проверяем дополнительные условия
-            if (all_results[0]["similarity"] - all_results[1]["similarity"]) < 0.04:
-                # Близкие кандидаты - проверяем количество согласованных эмбеддингов
-                top_user = all_results[0]["user_id"]
-                second_user = all_results[1]["user_id"]
+        # Адаптивный порог на основе количества пользователей и образцов
+        adaptive_threshold = base_threshold
 
-                # Проверяем количество эмбеддингов
-                if user_match_data[top_user]["valid_embedding_count"] < user_match_data[second_user][
-                    "valid_embedding_count"]:
-                    # Второй пользователь имеет больше эмбеддингов - предпочитаем его
-                    if all_results[1]["similarity"] > adaptive_threshold - 0.05:  # Немного снижаем требования
-                        logger.info(f"Preferring user {second_user} with more embeddings over {top_user}")
-                        best_match_user_id = second_user
-                        best_match_similarity = all_results[1]["similarity"]
-                        best_match_comparison = all_results[1]["comparison"]
+        # Если у нас мало пользователей, повышаем порог для большей уверенности
+        if len(user_embeddings) <= 2:
+            adaptive_threshold += 0.05
+
+        # Если у лучшего кандидата мало образцов, снижаем порог
+        if best_match_user_id:
+            sample_count = len(user_embeddings.get(best_match_user_id, []))
+            if sample_count < 5:  # Мало образцов
+                adaptive_threshold -= 0.05
+            elif sample_count > 15:  # Много образцов - выше уверенность
+                adaptive_threshold -= 0.03
 
         # Используем адаптивный порог и добавляем логирование
         logger.info(
@@ -960,7 +1005,8 @@ async def match_user_detailed(request: dict):
                 "similarity": float(best_match_similarity),
                 "detailed_similarity": {
                     "cosine_similarity": float(best_match_comparison["cosine_similarity"]),
-                    "weighted_score": float(best_match_comparison["weighted_score"])
+                    "adjusted_similarity": float(best_match_comparison["adjusted_similarity"]),
+                    "raw_similarity": float(best_match_comparison["raw_similarity"])
                 },
                 "match_candidates": top_candidates,
                 "threshold": float(adaptive_threshold),
@@ -975,7 +1021,10 @@ async def match_user_detailed(request: dict):
                 "detailed_similarity": {
                     "cosine_similarity": float(
                         best_match_comparison["cosine_similarity"]) if best_match_comparison else 0.0,
-                    "weighted_score": float(best_match_comparison["weighted_score"]) if best_match_comparison else 0.0
+                    "adjusted_similarity": float(
+                        best_match_comparison["adjusted_similarity"]) if best_match_comparison else 0.0,
+                    "raw_similarity": float(
+                        best_match_comparison["raw_similarity"]) if best_match_comparison else 0.0
                 },
                 "match_candidates": top_candidates,
                 "threshold": float(adaptive_threshold),
@@ -991,7 +1040,6 @@ async def match_user_detailed(request: dict):
             "message": str(e),
             "error_type": str(type(e).__name__)
         }
-
 @app.post('/match_embedding')
 async def match_embedding(request: MatchRequest):
     global user_embeddings
@@ -1085,7 +1133,7 @@ async def list_user_ids():
 
 @app.post("/authenticate_by_path")
 async def authenticate_by_path(request: dict):
-    """Аутентификация пользователя по пути к аудиофайлу с улучшенной надежностью"""
+    """Улучшенная аутентификация пользователя по пути к аудиофайлу с повышенной точностью"""
     global voice_model, anti_spoof_model, user_embeddings
 
     if not voice_model or not anti_spoof_model:
@@ -1104,15 +1152,15 @@ async def authenticate_by_path(request: dict):
                 "message": "Audio file not found"
             }
 
-        # Проверка на спуфинг
+        # Проверка на спуфинг с меньшим порогом для снижения ложных срабатываний
         spoof_result = anti_spoof_model.detect(audio_path)
         is_spoof = spoof_result.get("is_spoofing_detected", False) or spoof_result.get("is_spoof", False)
         spoof_prob = spoof_result.get("spoof_probability", 0.1)
 
-        # Используем более строгий порог для предотвращения ложных срабатываний
-        spoof_threshold = 0.4  # Снизили с 0.6 для большей чувствительности
+        # Повышаем порог для снижения количества ложных срабатываний
+        spoof_threshold = 0.6  # Увеличиваем с 0.4 до 0.6
 
-        if is_spoof or spoof_prob > spoof_threshold:
+        if is_spoof and spoof_prob > spoof_threshold:
             logger.warning(f"Spoofing detected in file {audio_path}: {spoof_prob:.4f}")
             return {
                 "success": True,
@@ -1123,7 +1171,7 @@ async def authenticate_by_path(request: dict):
                 "user_id": None
             }
 
-        # Извлечение эмбеддинга
+        # Извлечение эмбеддинга с улучшенной обработкой
         embedding = voice_model.extract_embedding(audio_path)
 
         if embedding is None:
@@ -1154,7 +1202,7 @@ async def authenticate_by_path(request: dict):
             "match_score": int(match_result.get("similarity", 0) * 100),
             "spoofing_detected": False,
             "similarity": float(match_result.get("similarity", 0)),
-            "threshold": float(match_result.get("threshold", 0.7)),
+            "threshold": float(match_result.get("threshold", 0.5)),
             "match_found": match_result.get("match_found", False)
         }
 
@@ -1174,7 +1222,6 @@ async def authenticate_by_path(request: dict):
             "success": False,
             "message": str(e)
         }
-
 @app.get("/system/reinitialize/status")
 async def get_reinitialize_status():
     """Возвращает текущий статус переинициализации"""

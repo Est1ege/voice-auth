@@ -1,10 +1,9 @@
-<!-- web/templates/admin/training_list.html -->
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>История тренировок - ГолосДоступ</title>
+    <title>Training History - VoiceAccess</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.3/font/bootstrap-icons.min.css">
     <style>
@@ -69,13 +68,13 @@
 <body>
     <header class="navbar navbar-dark bg-dark fixed-top">
         <div class="container-fluid">
-            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">ГолосДоступ</a>
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">VoiceAccess</a>
             <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="d-flex align-items-center">
                 <span class="text-white me-2">{{ session.username }}</span>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Выйти</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
             </div>
         </div>
     </header>
@@ -87,32 +86,37 @@
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
-                                <i class="bi bi-speedometer2"></i> Панель управления
+                                <i class="bi bi-speedometer2"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('manage_users') }}">
-                                <i class="bi bi-people"></i> Пользователи
+                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
+                                <i class="bi bi-people"></i> Users
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('access_logs') }}">
-                                <i class="bi bi-list-check"></i> Журнал доступа
+                                <i class="bi bi-list-check"></i> Access Logs
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link active" href="{{ url_for('training_dashboard') }}">
-                                <i class="bi bi-gpu-card"></i> Тренировка моделей
+                            <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                                <i class="bi bi-gpu-card"></i> Model Training
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('system_status') }}">
-                                <i class="bi bi-gear"></i> Состояние системы
+                                <i class="bi bi-gear"></i> System Status
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
+                                <i class="bi bi-arrow-repeat"></i> Export/Import
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('auth_monitor') }}">
-                                <i class="bi bi-mic"></i> Монитор аутентификации
+                                <i class="bi bi-mic"></i> Auth Monitor
                             </a>
                         </li>
                     </ul>
@@ -121,11 +125,11 @@
 
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                    <h1 class="h2">История тренировок</h1>
+                    <h1 class="h2">Training History</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">
                         <div class="btn-group me-2">
                             <a href="{{ url_for('training_dashboard') }}" class="btn btn-sm btn-outline-secondary">
-                                <i class="bi bi-arrow-left"></i> К панели тренировки
+                                <i class="bi bi-arrow-left"></i> Back to Training Panel
                             </a>
                         </div>
                     </div>
@@ -137,19 +141,19 @@
 
                 <div class="card shadow mb-4">
                     <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Активные задачи тренировки</h5>
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Active Training Tasks</h5>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table table-striped table-hover mb-0">
                                 <thead>
                                     <tr>
-                                        <th scope="col">ID задачи</th>
-                                        <th scope="col">Тип модели</th>
-                                        <th scope="col">Статус</th>
-                                        <th scope="col">Прогресс</th>
-                                        <th scope="col">Начало</th>
-                                        <th scope="col">Сообщение</th>
+                                        <th scope="col">Task ID</th>
+                                        <th scope="col">Model Type</th>
+                                        <th scope="col">Status</th>
+                                        <th scope="col">Progress</th>
+                                        <th scope="col">Start Time</th>
+                                        <th scope="col">Message</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -159,30 +163,30 @@
                                             <td><span class="badge bg-secondary">{{ task.task_id }}</span></td>
                                             <td>
                                                 {% if task.type == 'voice_model' %}
-                                                <span class="badge bg-primary">Распознавание голоса</span>
+                                                <span class="badge bg-primary">Voice Recognition</span>
                                                 {% elif task.type == 'anti_spoof' %}
-                                                <span class="badge bg-danger">Анти-спуфинг</span>
+                                                <span class="badge bg-danger">Anti-Spoofing</span>
                                                 {% else %}
                                                 <span class="badge bg-secondary">{{ task.type }}</span>
                                                 {% endif %}
                                             </td>
                                             <td>
                                                 {% if task.status == 'completed' %}
-                                                <span class="badge bg-success">Завершено</span>
+                                                <span class="badge bg-success">Completed</span>
                                                 {% elif task.status == 'error' %}
-                                                <span class="badge bg-danger">Ошибка</span>
+                                                <span class="badge bg-danger">Error</span>
                                                 {% elif task.status == 'training' %}
-                                                <span class="badge bg-primary task-status-running">Обучение</span>
+                                                <span class="badge bg-primary task-status-running">Training</span>
                                                 {% elif task.status == 'preparing_data' %}
-                                                <span class="badge bg-info task-status-running">Подготовка данных</span>
+                                                <span class="badge bg-info task-status-running">Preparing Data</span>
                                                 {% else %}
                                                 <span class="badge bg-secondary">{{ task.status }}</span>
                                                 {% endif %}
                                             </td>
                                             <td>
                                                 <div class="progress">
-                                                    <div class="progress-bar {% if task.status == 'completed' %}bg-success{% elif task.status == 'error' %}bg-danger{% else %}bg-primary progress-bar-striped progress-bar-animated{% endif %}" 
-                                                        role="progressbar" 
+                                                    <div class="progress-bar {% if task.status == 'completed' %}bg-success{% elif task.status == 'error' %}bg-danger{% else %}bg-primary progress-bar-striped progress-bar-animated{% endif %}"
+                                                        role="progressbar"
                                                         style="width: {{ task.progress*100 if task.progress is defined else 0 }}%;"
                                                         aria-valuenow="{{ task.progress*100 if task.progress is defined else 0 }}"
                                                         aria-valuemin="0"
@@ -191,13 +195,13 @@
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td>{{ task.start_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') if task.start_time else 'Нет данных' }}</td>
-                                            <td>{{ task.message|truncate(50) if task.message else 'Нет данных' }}</td>
+                                            <td>{{ task.start_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') if task.start_time else 'No data' }}</td>
+                                            <td>{{ task.message|truncate(50) if task.message else 'No data' }}</td>
                                         </tr>
                                         {% endfor %}
                                     {% else %}
                                         <tr>
-                                            <td colspan="6" class="text-center py-3">Нет активных задач тренировки</td>
+                                            <td colspan="6" class="text-center py-3">No active training tasks</td>
                                         </tr>
                                     {% endif %}
                                 </tbody>
@@ -208,19 +212,19 @@
 
                 <div class="card shadow">
                     <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0"><i class="bi bi-archive"></i> История тренировок</h5>
+                        <h5 class="mb-0"><i class="bi bi-archive"></i> Training History</h5>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table table-striped table-hover mb-0">
                                 <thead>
                                     <tr>
-                                        <th scope="col">ID задачи</th>
-                                        <th scope="col">Тип модели</th>
-                                        <th scope="col">Статус</th>
-                                        <th scope="col">Начало</th>
-                                        <th scope="col">Завершение</th>
-                                        <th scope="col">Сообщение</th>
+                                        <th scope="col">Task ID</th>
+                                        <th scope="col">Model Type</th>
+                                        <th scope="col">Status</th>
+                                        <th scope="col">Start Time</th>
+                                        <th scope="col">End Time</th>
+                                        <th scope="col">Message</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -230,30 +234,30 @@
                                             <td><span class="badge bg-secondary">{{ task.task_id }}</span></td>
                                             <td>
                                                 {% if task.type == 'voice_model' %}
-                                                <span class="badge bg-primary">Распознавание голоса</span>
+                                                <span class="badge bg-primary">Voice Recognition</span>
                                                 {% elif task.type == 'anti_spoof' %}
-                                                <span class="badge bg-danger">Анти-спуфинг</span>
+                                                <span class="badge bg-danger">Anti-Spoofing</span>
                                                 {% else %}
                                                 <span class="badge bg-secondary">{{ task.type }}</span>
                                                 {% endif %}
                                             </td>
                                             <td>
                                                 {% if task.status == 'completed' %}
-                                                <span class="badge bg-success">Завершено</span>
+                                                <span class="badge bg-success">Completed</span>
                                                 {% elif task.status == 'error' %}
-                                                <span class="badge bg-danger">Ошибка</span>
+                                                <span class="badge bg-danger">Error</span>
                                                 {% else %}
                                                 <span class="badge bg-secondary">{{ task.status }}</span>
                                                 {% endif %}
                                             </td>
-                                            <td>{{ task.start_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') if task.start_time else 'Нет данных' }}</td>
-                                            <td>{{ task.end_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') if task.end_time else 'Нет данных' }}</td>
-                                            <td>{{ task.message|truncate(50) if task.message else 'Нет данных' }}</td>
+                                            <td>{{ task.start_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') if task.start_time else 'No data' }}</td>
+                                            <td>{{ task.end_time|replace('T', ' ')|replace('Z', '')|replace('.', ' ')|truncate(19, True, '') if task.end_time else 'No data' }}</td>
+                                            <td>{{ task.message|truncate(50) if task.message else 'No data' }}</td>
                                         </tr>
                                         {% endfor %}
                                     {% else %}
                                         <tr>
-                                            <td colspan="6" class="text-center py-3">История тренировок пуста</td>
+                                            <td colspan="6" class="text-center py-3">Training history is empty</td>
                                         </tr>
                                     {% endif %}
                                 </tbody>
@@ -267,7 +271,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Автоматическое обновление страницы каждые 15 секунд, если есть активные задачи
+        // Automatically refresh the page every 15 seconds if there are active tasks
         {% if tasks and tasks.active and tasks.active|length > 0 %}
         setTimeout(function() {
             window.location.reload();

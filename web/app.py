@@ -785,12 +785,6 @@ def simple_add_user():
 
     return render_template('admin/simple_add_user.html')
 
-@app.route('/admin/users/batch_import', methods=['GET'])
-@admin_required
-def batch_import_view():
-    """Страница для пакетного импорта пользователей"""
-    return render_template('admin/batch_import.html')
-
 @app.route('/admin/users/batch_import/zip', methods=['POST'])
 @admin_required
 def batch_import_users_from_zip():
@@ -899,54 +893,6 @@ def batch_import_users_from_zip():
     finally:
         # Удаляем временную директорию
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-@app.route('/admin/system/transfer', methods=['GET'])
-@admin_required
-def system_transfer():
-    """Страница для экспорта/импорта системы"""
-    # Получение информации о системе
-    try:
-        response = requests.get(f"{API_URL}/api/system/status")
-        response.raise_for_status()
-
-        status = response.json()
-        system_info = {
-            "users_count": status.get("users_count", 0),
-            "active_users_count": status.get("active_users_count", 0),
-            "samples_count": "Н/Д", # В API нет этой информации, можно добавить
-            "audio_size": "Н/Д",    # В API нет этой информации, можно добавить
-            "last_update": datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-        }
-    except:
-        system_info = {
-            "users_count": "Н/Д",
-            "active_users_count": "Н/Д",
-            "samples_count": "Н/Д",
-            "audio_size": "Н/Д",
-            "last_update": "Н/Д"
-        }
-
-    # Получение истории экспорта
-    export_history = []
-    if os.path.exists(EXPORT_FOLDER):
-        for file in os.listdir(EXPORT_FOLDER):
-            if file.lower().endswith('.zip'):
-                file_path = os.path.join(EXPORT_FOLDER, file)
-                file_stat = os.stat(file_path)
-                size_mb = file_stat.st_size / (1024 * 1024)
-
-                export_history.append({
-                    "filename": file,
-                    "date": datetime.datetime.fromtimestamp(file_stat.st_mtime).strftime("%d.%m.%Y %H:%M"),
-                    "size": f"{size_mb:.2f} MB"
-                })
-
-    # Сортируем по дате (новые сначала)
-    export_history.sort(key=lambda x: x["date"], reverse=True)
-
-    return render_template('admin/system_transfer.html',
-                          system_info=system_info,
-                          export_history=export_history)
 
 @app.route('/admin/system/export', methods=['POST'])
 @admin_required

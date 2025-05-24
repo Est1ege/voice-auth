@@ -405,7 +405,7 @@ function handleAuthenticationResult(result) {
             // Проверка на NaN и Infinity
             let matchPercentage = 0;
             if (isNaN(result.similarity) || !isFinite(result.similarity)) {
-                matchPercentage = 40; // Используем значение по умолчанию для отказа
+                matchPercentage = Math.round(result.similarity * 100); // Используем значение по умолчанию для отказа
             } else {
                 matchPercentage = Math.round(result.similarity * 100);
             }

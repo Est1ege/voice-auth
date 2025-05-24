@@ -83,11 +83,6 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('access_logs') }}">
-                                <i class="bi bi-list-check"></i> Access Logs
-                            </a>
-                        </li>
-                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('training_dashboard') }}">
                                 <i class="bi bi-gpu-card"></i> Model Training
                             </a>
@@ -95,11 +90,6 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('system_status') }}">
                                 <i class="bi bi-gear"></i> System Status
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
-                                <i class="bi bi-arrow-repeat"></i> Export/Import
                             </a>
                         </li>
                         <li class="nav-item">
@@ -130,12 +120,6 @@
                     <div class="mt-2">
                         <a href="{{ url_for('simple_add_user') }}" class="btn btn-primary quick-action-btn">
                             <i class="bi bi-person-check"></i> Simple Add
-                        </a>
-                        <a href="{{ url_for('batch_import_view') }}" class="btn btn-info quick-action-btn">
-                            <i class="bi bi-people"></i> Batch Import
-                        </a>
-                        <a href="{{ url_for('system_transfer') }}" class="btn btn-warning quick-action-btn">
-                            <i class="bi bi-arrow-repeat"></i> System Export/Import
                         </a>
                     </div>
                 </div>

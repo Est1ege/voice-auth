@@ -87,18 +87,13 @@
                 <div class="sidebar-sticky">
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                            <a class="nav-link active" href="{{ url_for('admin_dashboard') }}">
                                 <i class="bi bi-speedometer2"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link active" href="{{ url_for('manage_users') }}">
+                            <a class="nav-link" href="{{ url_for('manage_users') }}">
                                 <i class="bi bi-people"></i> Users
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('access_logs') }}">
-                                <i class="bi bi-list-check"></i> Access Logs
                             </a>
                         </li>
                         <li class="nav-item">
@@ -109,11 +104,6 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('system_status') }}">
                                 <i class="bi bi-gear"></i> System Status
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('system_transfer') }}">
-                                <i class="bi bi-arrow-repeat"></i> Export/Import
                             </a>
                         </li>
                         <li class="nav-item">
@@ -132,9 +122,6 @@
                         <div class="btn-group me-2">
                             <a href="{{ url_for('checkpoint') }}" class="btn btn-sm btn-primary">
                                 <i class="bi bi-door-open"></i> Checkpoint Mode
-                            </a>
-                            <a href="{{ url_for('add_user') }}" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-person-plus"></i> Add User
                             </a>
                         </div>
                     </div>

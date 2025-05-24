@@ -22,6 +22,7 @@ from voice_embedding import VoiceEmbeddingModel
 from anti_spoof import AntiSpoofingDetector
 from training_manager import TrainingManager  # Добавляем импорт менеджера тренировок
 
+
 # Функция для безопасной сериализации NumPy значений
 def safe_serialize(obj):
     """
@@ -41,6 +42,8 @@ def safe_serialize(obj):
         return [safe_serialize(item) for item in obj]
     else:
         return obj
+
+
 # Определение класса для безопасной сериализации
 class CustomJSONResponse(JSONResponse):
     def render(self, content: Any) -> bytes:
@@ -49,6 +52,7 @@ class CustomJSONResponse(JSONResponse):
         """
         content = safe_serialize(content)
         return super().render(content)
+
 
 # Создание экземпляра FastAPI
 app = FastAPI(title="ML-сервис голосовой аутентификации", version="1.0.0", default_response_class=CustomJSONResponse)
@@ -102,29 +106,36 @@ user_embeddings = {}
 # Инициализация менеджера тренировок
 training_manager = None
 
+
 # Модели данных
 
 class AudioRequest(BaseModel):
     audio_path: str
 
+
 class SpoofingResponse(BaseModel):
     is_spoof: bool
     spoof_probability: float
 
+
 class EmbeddingResponse(BaseModel):
     embedding: List[float]
 
+
 class MatchRequest(BaseModel):
     embedding: List[float]
+
 
 class MatchResponse(BaseModel):
     user_id: Optional[str] = None
     similarity: float
     match_found: bool
 
+
 class UserEmbeddingRequest(BaseModel):
     user_id: str
     embeddings: List[List[float]]
+
 
 class StatusResponse(BaseModel):
     status: str
@@ -133,19 +144,23 @@ class StatusResponse(BaseModel):
     device: str
     user_count: int
 
+
 class TrainingRequest(BaseModel):
     model_type: str  # "voice_model" или "anti_spoof"
     batch_size: Optional[int] = 32
     learning_rate: Optional[float] = 0.001
     num_epochs: Optional[int] = 50
 
+
 class TrainingResponse(BaseModel):
     task_id: str
     status: str
     message: str
 
+
 class TrainingStatusRequest(BaseModel):
     task_id: str
+
 
 class TrainingStatusResponse(BaseModel):
     task_id: str
@@ -156,6 +171,7 @@ class TrainingStatusResponse(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
 
+
 reinitialization_status = {
     "in_progress": False,
     "last_status": None,
@@ -163,6 +179,7 @@ reinitialization_status = {
     "end_time": None,
     "progress": 0.0
 }
+
 
 # Найдите функцию load_user_embeddings
 def load_user_embeddings():
@@ -192,20 +209,21 @@ def load_user_embeddings():
         logger.info("No user embeddings file found. Starting with empty database.")
         user_embeddings = {}
 
+
 # Сохранение эмбеддингов пользователей
 def save_user_embeddings():
     global user_embeddings
     embeddings_file = os.path.join(EMBEDDINGS_PATH, "user_embeddings.json")
-    
+
     try:
         # Создаем копию с преобразованием numpy массивов в списки
         serializable_embeddings = {}
         for user_id, embeddings in user_embeddings.items():
             serializable_embeddings[user_id] = [emb.tolist() for emb in embeddings]
-        
+
         with open(embeddings_file, "w") as f:
             json.dump(serializable_embeddings, f)
-            
+
         logger.info(f"Saved embeddings for {len(user_embeddings)} users")
     except Exception as e:
         logger.error(f"Error saving user embeddings: {e}")
@@ -338,6 +356,7 @@ def check_audio_quality(audio_path):
         logger.error(f"Error in audio quality check: {e}")
         return True, 0.02, 1.0, 10.0  # По умолчанию считаем, что речь есть
 
+
 # Инициализация моделей при запуске
 @app.on_event("startup")
 async def startup_event():
@@ -357,18 +376,19 @@ async def startup_event():
         anti_spoofing_model_path = os.path.join(MODEL_PATH, "anti_spoofing_model")
         anti_spoof_model = AntiSpoofingDetector(model_path=anti_spoofing_model_path, device=device)
         logger.info("Anti-spoofing model initialized")
-        
+
         # Загрузка эмбеддингов пользователей
         load_user_embeddings()
-        
+
         # Инициализация менеджера тренировок
         training_manager = TrainingManager(MODEL_PATH, AUDIO_PATH)
         logger.info("Training manager initialized")
-        
+
     except Exception as e:
         logger.error(f"Error initializing models: {e}")
         # Не останавливаем сервер, но логируем ошибку
         # В реальном приложении здесь могла бы быть более сложная обработка ошибок
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -376,14 +396,15 @@ async def shutdown_event():
     save_user_embeddings()
     logger.info("ML service shutting down")
 
+
 # Эндпоинты API
 @app.get("/health")
 @app.post("/health")
 async def health_check():
     global voice_model, anti_spoof_model
-    
+
     models_loaded = voice_model is not None and anti_spoof_model is not None
-    
+
     return StatusResponse(
         status="ok",
         message="ML service is running",
@@ -446,12 +467,10 @@ async def detect_spoofing(request: AudioRequest):
             "error": str(e)
         }
 
-# В app.py - более продвинутый подход с проверкой качества аудио
-# Улучшенная функция для extract_embedding - повышает качество извлекаемых эмбеддингов
 
+# В app.py - более продвинутый подход с проверкой качества аудио
 @app.post("/extract_embedding", response_model=EmbeddingResponse)
 async def extract_embedding(request: AudioRequest):
-    """Улучшенное извлечение эмбеддинга из аудиофайла для более надежного распознавания"""
     global voice_model
 
     logger.info(f"Extracting embedding from file: {request.audio_path}")
@@ -466,44 +485,13 @@ async def extract_embedding(request: AudioRequest):
             logger.error(f"Audio file not found: {request.audio_path}")
             raise HTTPException(status_code=404, detail=f"Audio file not found: {request.audio_path}")
 
-        # Предварительная проверка качества аудио
-        try:
-            import librosa
-            waveform, sr = librosa.load(request.audio_path, sr=16000, mono=True)
-
-            # Проверка наличия речи (энергии сигнала)
-            energy = np.mean(np.abs(waveform))
-            if energy < 0.01:  # Очень тихое аудио
-                logger.warning(f"Audio file has very low energy: {energy:.6f}")
-                # Предварительная нормализация
-                waveform = librosa.util.normalize(waveform) * 0.95
-                # Сохраняем обратно с усилением
-                import soundfile as sf
-                temp_path = request.audio_path + ".normalized.wav"
-                sf.write(temp_path, waveform, sr)
-                # Используем нормализованную версию
-                logger.info(f"Created normalized version at: {temp_path}")
-                request.audio_path = temp_path
-        except Exception as audio_check_error:
-            logger.warning(f"Error during audio quality check: {audio_check_error}")
-            # Продолжаем с оригинальным файлом
-
-        # Вызываем улучшенный метод извлечения эмбеддинга
+        # Вызываем extract_embedding напрямую без проверки качества
+        # (проверка будет выполнена внутри метода)
         embedding = voice_model.extract_embedding(request.audio_path)
 
         if embedding is None:
             raise HTTPException(status_code=400,
                                 detail="Could not extract embedding from audio file. Check audio quality.")
-
-        # Двойная проверка качества эмбеддинга
-        if np.any(np.isnan(embedding)) or np.any(np.isinf(embedding)):
-            logger.error(f"Extracted embedding contains NaN or Inf values")
-            raise HTTPException(status_code=400, detail="Extracted embedding contains invalid values")
-
-        # Нормализация эмбеддинга (для дополнительной надежности)
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = embedding / norm
 
         logger.info(f"Extracted embedding with shape {embedding.shape}")
 
@@ -515,17 +503,19 @@ async def extract_embedding(request: AudioRequest):
     except Exception as e:
         logger.error(f"Error extracting embedding: {e}")
         raise HTTPException(status_code=500, detail=f"Error extracting embedding: {str(e)}")
+
+
 @app.get("/list_user_ids")
 async def list_user_ids():
     """
     Возвращает список ID пользователей в системе
     """
     global user_embeddings
-    
+
     try:
         # Формирование списка ID пользователей
         user_ids = list(user_embeddings.keys())
-        
+
         return {
             "success": True,
             "user_ids": user_ids,
@@ -541,8 +531,7 @@ async def list_user_ids():
 
 @app.post("/match_user", response_model=MatchResponse)
 async def match_user(request: MatchRequest):
-    """Улучшенное сопоставление эмбеддинга с пользователями"""
-    global voice_model, user_embeddings
+    global user_embeddings
 
     try:
         # Преобразование входящего эмбеддинга в numpy массив
@@ -560,15 +549,11 @@ async def match_user(request: MatchRequest):
         best_match_user_id = None
         best_match_similarity = 0.0
 
-        # Снижаем порог для повышения чувствительности
-        match_threshold = 0.4  # Было 0.5
+        # Пониженный порог для тестирования
+        match_threshold = 0.5
 
-        # Обходим всех пользователей и их эмбеддинги
         for user_id, embeddings in user_embeddings.items():
             logger.info(f"Comparing with user {user_id}: {len(embeddings)} embeddings")
-
-            # Для каждого пользователя находим лучшее совпадение среди всех его эмбеддингов
-            user_best_similarity = 0.0
 
             for i, user_embedding in enumerate(embeddings):
                 try:
@@ -578,18 +563,25 @@ async def match_user(request: MatchRequest):
                             f"Dimension mismatch for user {user_id}, embedding {i}: {user_embedding.shape} vs {input_embedding.shape}")
                         continue
 
-                    # Используем улучшенное сравнение эмбеддингов
-                    similarity, _ = voice_model.improved_compare_embeddings(
-                        input_embedding, user_embedding, threshold=match_threshold
-                    )
+                    # Нормализация эмбеддингов перед сравнением
+                    input_norm = np.linalg.norm(input_embedding)
+                    user_norm = np.linalg.norm(user_embedding)
+
+                    if input_norm < 1e-10 or user_norm < 1e-10:
+                        logger.warning(f"Near-zero norm for embedding comparison: input={input_norm}, user={user_norm}")
+                        continue
+
+                    input_normalized = input_embedding / input_norm
+                    user_normalized = user_embedding / user_norm
+
+                    # Вычисление косинусного сходства
+                    cosine_similarity = np.dot(input_normalized, user_normalized)
+
+                    # Преобразование в диапазон [0, 1]
+                    similarity = float((cosine_similarity + 1) / 2)
 
                     logger.info(f"User {user_id}, embedding {i}: similarity={similarity:.4f}")
 
-                    # Сохраняем лучшее совпадение для этого пользователя
-                    if similarity > user_best_similarity:
-                        user_best_similarity = similarity
-
-                    # Также обновляем глобальное лучшее совпадение
                     if similarity > best_match_similarity:
                         best_match_similarity = similarity
                         best_match_user_id = user_id
@@ -600,13 +592,6 @@ async def match_user(request: MatchRequest):
 
         # Пороговое значение для определения совпадения
         match_found = best_match_similarity >= match_threshold
-
-        # Эвристика: если у пользователя мало образцов голоса, снижаем порог
-        if best_match_user_id and not match_found:
-            user_samples_count = len(user_embeddings.get(best_match_user_id, []))
-            if user_samples_count < 5 and best_match_similarity >= 0.35:
-                logger.info(f"Lowering threshold for user with few samples: {user_samples_count}")
-                match_found = True
 
         logger.info(
             f"Best match: user_id={best_match_user_id}, similarity={best_match_similarity:.4f}, match_found={match_found}")
@@ -624,52 +609,55 @@ async def match_user(request: MatchRequest):
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/update_model")
 async def update_model(request: UserEmbeddingRequest, background_tasks: BackgroundTasks):
     global user_embeddings
-    
+
     try:
         # Преобразование входящих эмбеддингов в numpy массивы
         embeddings = [np.array(emb) for emb in request.embeddings]
-        
+
         # Обновление эмбеддингов пользователя
         user_embeddings[request.user_id] = embeddings
-        
+
         # Сохранение эмбеддингов в фоновом режиме
         background_tasks.add_task(save_user_embeddings)
-        
+
         logger.info(f"Updated embeddings for user_id={request.user_id}, count={len(embeddings)}")
-        
+
         return {"success": True, "message": "User embeddings updated"}
     except Exception as e:
         logger.error(f"Error updating user embeddings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Новые эндпоинты для тренировки моделей
 @app.post("/training/start", response_model=TrainingResponse)
 async def start_training(request: TrainingRequest):
     global training_manager
-    
+
     if training_manager is None:
         raise HTTPException(status_code=500, detail="Training manager not initialized")
-    
+
     try:
         params = {
             "batch_size": request.batch_size,
             "learning_rate": request.learning_rate,
             "num_epochs": request.num_epochs
         }
-        
+
         if request.model_type == "voice_model":
             task_id = training_manager.start_voice_model_training(params)
         elif request.model_type == "anti_spoof":
             task_id = training_manager.start_anti_spoof_model_training(params)
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported model type: {request.model_type}")
-        
+
         # Получение начального статуса
         status = training_manager.get_task_status(task_id)
-        
+
         return TrainingResponse(
             task_id=task_id,
             status=status["status"],
@@ -678,6 +666,7 @@ async def start_training(request: TrainingRequest):
     except Exception as e:
         logger.error(f"Error starting training: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # Добавьте этот эндпоинт
 @app.get("/training/{task_id}/status")
@@ -710,13 +699,14 @@ async def get_task_status(task_id: str):
             "type": None
         }
 
+
 @app.get("/training/list")
 async def list_training_tasks():
     global training_manager
-    
+
     if training_manager is None:
         raise HTTPException(status_code=500, detail="Training manager not initialized")
-    
+
     try:
         tasks = training_manager.get_all_tasks()
         return tasks
@@ -724,13 +714,14 @@ async def list_training_tasks():
         logger.error(f"Error listing training tasks: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/training/cleanup")
 async def cleanup_training_tasks(max_age_days: int = 7):
     global training_manager
-    
+
     if training_manager is None:
         raise HTTPException(status_code=500, detail="Training manager not initialized")
-    
+
     try:
         removed_count = training_manager.clean_completed_tasks(max_age_days)
         return {"success": True, "removed_count": removed_count}
@@ -738,27 +729,29 @@ async def cleanup_training_tasks(max_age_days: int = 7):
         logger.error(f"Error cleaning up training tasks: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/train_anti_spoofing")
 async def train_anti_spoofing(background_tasks: BackgroundTasks):
     global anti_spoof_model
-    
+
     if anti_spoof_model is None:
         raise HTTPException(status_code=500, detail="Anti-spoofing model not loaded")
-    
+
     try:
         # Этот эндпоинт будет запускать обучение модели анти-спуфинга
         # в фоновом режиме, если необходимо
         # В этой демоверсии просто возвращаем успех
-        
+
         return {"success": True, "message": "Anti-spoofing model training started"}
     except Exception as e:
         logger.error(f"Error starting anti-spoofing training: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Заменить текущую функцию в ml_model/app.py на эту
 @app.post("/match_user_detailed")
 async def match_user_detailed(request: dict):
-    """Улучшенное подробное сравнение эмбеддинга с базой пользователей"""
+    """Подробное сравнение эмбеддинга с базой пользователей с улучшенной надежностью"""
     global user_embeddings, voice_model
 
     try:
@@ -825,19 +818,22 @@ async def match_user_detailed(request: dict):
                 "message": "No users registered in the system"
             }
 
-        # Поиск наилучшего соответствия
+        # Поиск наилучшего соответствия с более гибким порогом
         best_match_user_id = None
         best_match_similarity = 0.0
-        best_match_raw_similarity = 0.0
         best_match_comparison = None
         all_results = []
 
-        # Устанавливаем умеренный порог
-        base_threshold = 0.45  # Понижен для большей чувствительности, но не слишком низкий
+        # Динамически определяем порог в зависимости от количества пользователей
+        # Используем более высокий порог для избежания ложных срабатываний
+        adaptive_threshold = max(0.5, min(0.75, 0.45 + 0.02 * len(user_embeddings)))
+        logger.info(f"Using adaptive threshold: {adaptive_threshold:.2f} for {len(user_embeddings)} users")
+
+        # Создаем словарь для хранения данных о совпадениях по пользователям
+        user_match_data = {}
 
         for user_id, embeddings in user_embeddings.items():
-            user_best_similarity = 0.0
-            user_best_raw_similarity = 0.0
+            user_best_similarity = 0
             user_best_comparison = None
             user_all_scores = []
 
@@ -872,95 +868,84 @@ async def match_user_detailed(request: dict):
                     # Косинусное сходство нормализованных векторов
                     raw_similarity = np.dot(np_embedding, user_embedding_norm)
 
-                    # Преобразование косинусного сходства в диапазон [0, 1]
-                    cosine_similarity = (raw_similarity + 1) / 2
+                    # Улучшенное преобразование сходства с более агрессивными параметрами
+                    def sigmoid_transform(x, center=0.75, sharpness=12):
+                        """Улучшенное сигмоидальное преобразование для усиления различий"""
+                        return 1.0 / (1.0 + np.exp(-sharpness * (x - center)))
 
-                    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ - более мягкое усиление сходства
-                    # Эта функция обеспечит умеренное увеличение значений в середине диапазона
-                    def balanced_enhancement(x):
-                        """Балансированное усиление сходства, работающее для всех пользователей."""
-                        # x уже в диапазоне [0, 1]
+                    adjusted_similarity = sigmoid_transform(raw_similarity)
 
-                        # Мягкое усиление средних значений
-                        if x < 0.3:
-                            return x * 0.8  # Немного уменьшаем очень низкие значения
-                        elif x < 0.45:
-                            return x * 1.1  # Немного усиливаем ниже среднего
-                        elif x < 0.65:
-                            return 0.495 + (x - 0.45) * 1.2  # Умеренно усиливаем средние
-                        else:
-                            return 0.735 + (x - 0.65) * 0.9  # Слегка сжимаем высокие
-
-                    adjusted_similarity = balanced_enhancement(cosine_similarity)
-
-                    # Проверка на случайное совпадение
-                    if cosine_similarity < 0.3:  # Умеренный порог для фильтрации
+                    # Проверка на случайное совпадение с более низким порогом
+                    if abs(raw_similarity) < 0.25:
                         continue
+
+                    # Нормализация в диапазон [0, 1] для обратной совместимости
+                    cosine_similarity = (raw_similarity + 1) / 2
 
                     # Сохраняем результат в понятном формате
                     comparison = {
                         "raw_similarity": float(raw_similarity),
-                        "cosine_similarity": float(cosine_similarity),
                         "adjusted_similarity": float(adjusted_similarity),
+                        "cosine_similarity": float(cosine_similarity),
                         "weighted_score": float(adjusted_similarity)  # Основной показатель
                     }
 
                     # Сохраняем все сравнения для этого пользователя
                     user_all_scores.append({
                         "index": i,
+                        "embedding": user_embedding,
                         "similarity": adjusted_similarity,
-                        "raw_similarity": raw_similarity,
                         "comparison": comparison
                     })
 
                     # Логируем каждое сравнение для отладки
-                    logger.info(
-                        f"User {user_id}, emb {i}: raw={raw_similarity:.4f}, cos={cosine_similarity:.4f}, adj={adjusted_similarity:.4f}")
+                    logger.info(f"User {user_id}, emb {i}: raw={raw_similarity:.4f}, adj={adjusted_similarity:.4f}")
 
                     # Сохраняем лучшее соответствие для этого пользователя
                     if adjusted_similarity > user_best_similarity:
                         user_best_similarity = adjusted_similarity
-                        user_best_raw_similarity = raw_similarity
                         user_best_comparison = comparison
 
                 except Exception as e:
                     logger.warning(f"Error comparing with user {user_id}, emb {i}: {e}")
                     continue
 
-            # Умеренный бонус за согласованность - с более низким порогом активации
-            if len(user_all_scores) >= 2:  # Достаточно даже 2 согласованных образцов
+            # Применяем дополнительную проверку на согласованность эмбеддингов
+            if len(user_all_scores) >= 3 and user_best_similarity > 0.6:
                 # Сортируем по уменьшению сходства
                 user_all_scores.sort(key=lambda x: x["similarity"], reverse=True)
 
-                # Берем топ-2 лучших совпадения (или меньше, если недостаточно образцов)
-                top_scores_count = min(len(user_all_scores), 2)
-                top_scores = user_all_scores[:top_scores_count]
+                # Берем топ-3 лучших совпадения
+                top_scores = user_all_scores[:3]
 
-                # Если есть хотя бы 2 похожих эмбеддинга - даем бонус
-                if top_scores_count >= 2 and top_scores[0]["similarity"] > 0.4:
-                    # Проверяем насколько они близки друг к другу
-                    if (top_scores[0]["similarity"] - top_scores[-1]["similarity"]) < 0.2:
-                        # Небольшой бонус за согласованность
-                        consistency_bonus = 0.05
-                        adjusted_similarity = min(0.95, user_best_similarity + consistency_bonus)
-                        logger.info(f"Applied modest consistency bonus for user {user_id}: +{consistency_bonus:.2f}")
-                        user_best_similarity = adjusted_similarity
+                # Проверяем разницу между ними - меньшая разница = более надежное совпадение
+                if (top_scores[0]["similarity"] - top_scores[-1]["similarity"]) < 0.15:
+                    # Эмбеддинги согласованы, увеличиваем оценку
+                    consistency_bonus = 0.08  # 8% бонус
+                    adjusted_similarity = min(1.0, user_best_similarity + consistency_bonus)
+                    logger.info(f"Applied consistency bonus for user {user_id}: +{consistency_bonus:.2f}")
+                    user_best_similarity = adjusted_similarity
 
             # Добавляем лучшее совпадение пользователя, если оно было найдено
-            if user_best_comparison and user_best_similarity > 0:
+            if user_best_comparison:
+                # Сохраняем данные о совпадениях этого пользователя
+                user_match_data[user_id] = {
+                    "similarity": user_best_similarity,
+                    "comparison": user_best_comparison,
+                    "valid_embedding_count": len(valid_embeddings),
+                    "match_scores": user_all_scores
+                }
+
                 # Добавляем лучшее сходство пользователя в общие результаты
                 all_results.append({
                     "user_id": user_id,
                     "similarity": user_best_similarity,
-                    "raw_similarity": user_best_raw_similarity,
-                    "comparison": user_best_comparison,
-                    "sample_count": len(valid_embeddings)
+                    "comparison": user_best_comparison
                 })
 
                 # Обновляем общее лучшее совпадение
                 if user_best_similarity > best_match_similarity:
                     best_match_similarity = user_best_similarity
-                    best_match_raw_similarity = user_best_raw_similarity
                     best_match_user_id = user_id
                     best_match_comparison = user_best_comparison
 
@@ -972,26 +957,27 @@ async def match_user_detailed(request: dict):
         for result in all_results[:3]:  # Выводим топ-3 результата
             top_candidates.append({
                 "user_id": result["user_id"],
-                "similarity": float(result["similarity"]),
-                "sample_count": result["sample_count"]
+                "similarity": float(result["similarity"])
             })
-            logger.info(
-                f"Match candidate: user_id={result['user_id']}, similarity={result['similarity']:.4f}, samples={result['sample_count']}")
+            logger.info(f"Match candidate: user_id={result['user_id']}, similarity={result['similarity']:.4f}")
 
-        # Адаптивный порог на основе количества пользователей и образцов
-        adaptive_threshold = base_threshold
+        # Анализ конкурирующих кандидатов
+        if len(all_results) >= 2:
+            # Если разница между двумя лучшими кандидатами очень мала, проверяем дополнительные условия
+            if (all_results[0]["similarity"] - all_results[1]["similarity"]) < 0.04:
+                # Близкие кандидаты - проверяем количество согласованных эмбеддингов
+                top_user = all_results[0]["user_id"]
+                second_user = all_results[1]["user_id"]
 
-        # Если у нас мало пользователей, повышаем порог для большей уверенности
-        if len(user_embeddings) <= 2:
-            adaptive_threshold += 0.05
-
-        # Если у лучшего кандидата мало образцов, снижаем порог
-        if best_match_user_id:
-            sample_count = len(user_embeddings.get(best_match_user_id, []))
-            if sample_count < 5:  # Мало образцов
-                adaptive_threshold -= 0.05
-            elif sample_count > 15:  # Много образцов - выше уверенность
-                adaptive_threshold -= 0.03
+                # Проверяем количество эмбеддингов
+                if user_match_data[top_user]["valid_embedding_count"] < user_match_data[second_user][
+                    "valid_embedding_count"]:
+                    # Второй пользователь имеет больше эмбеддингов - предпочитаем его
+                    if all_results[1]["similarity"] > adaptive_threshold - 0.05:  # Немного снижаем требования
+                        logger.info(f"Preferring user {second_user} with more embeddings over {top_user}")
+                        best_match_user_id = second_user
+                        best_match_similarity = all_results[1]["similarity"]
+                        best_match_comparison = all_results[1]["comparison"]
 
         # Используем адаптивный порог и добавляем логирование
         logger.info(
@@ -1005,8 +991,7 @@ async def match_user_detailed(request: dict):
                 "similarity": float(best_match_similarity),
                 "detailed_similarity": {
                     "cosine_similarity": float(best_match_comparison["cosine_similarity"]),
-                    "adjusted_similarity": float(best_match_comparison["adjusted_similarity"]),
-                    "raw_similarity": float(best_match_comparison["raw_similarity"])
+                    "weighted_score": float(best_match_comparison["weighted_score"])
                 },
                 "match_candidates": top_candidates,
                 "threshold": float(adaptive_threshold),
@@ -1021,10 +1006,7 @@ async def match_user_detailed(request: dict):
                 "detailed_similarity": {
                     "cosine_similarity": float(
                         best_match_comparison["cosine_similarity"]) if best_match_comparison else 0.0,
-                    "adjusted_similarity": float(
-                        best_match_comparison["adjusted_similarity"]) if best_match_comparison else 0.0,
-                    "raw_similarity": float(
-                        best_match_comparison["raw_similarity"]) if best_match_comparison else 0.0
+                    "weighted_score": float(best_match_comparison["weighted_score"]) if best_match_comparison else 0.0
                 },
                 "match_candidates": top_candidates,
                 "threshold": float(adaptive_threshold),
@@ -1040,6 +1022,8 @@ async def match_user_detailed(request: dict):
             "message": str(e),
             "error_type": str(type(e).__name__)
         }
+
+
 @app.post('/match_embedding')
 async def match_embedding(request: MatchRequest):
     global user_embeddings
@@ -1067,6 +1051,7 @@ async def match_embedding(request: MatchRequest):
         return MatchResponse(user_id=best_user, similarity=best_score, match_found=True)
     else:
         return MatchResponse(user_id=None, similarity=best_score, match_found=False)
+
 
 @app.post("/reload_embeddings")
 async def reload_embeddings():
@@ -1102,10 +1087,12 @@ async def reload_embeddings():
             "message": str(e)
         }
 
+
 @app.get("/ping")
 async def ping():
     """Простой эндпоинт для проверки доступности ML-сервиса"""
     return {"status": "ok", "message": "ML service is available"}
+
 
 @app.get("/list_user_ids")
 async def list_user_ids():
@@ -1113,11 +1100,11 @@ async def list_user_ids():
     Возвращает список ID пользователей в системе
     """
     global user_embeddings
-    
+
     try:
         # Формирование списка ID пользователей
         user_ids = list(user_embeddings.keys())
-        
+
         return {
             "success": True,
             "user_ids": user_ids,
@@ -1129,11 +1116,13 @@ async def list_user_ids():
             "success": False,
             "message": str(e)
         }
+
+
 # Добавьте в ml_model/app.py:
 
 @app.post("/authenticate_by_path")
 async def authenticate_by_path(request: dict):
-    """Улучшенная аутентификация пользователя по пути к аудиофайлу с повышенной точностью"""
+    """Аутентификация пользователя по пути к аудиофайлу с улучшенной надежностью"""
     global voice_model, anti_spoof_model, user_embeddings
 
     if not voice_model or not anti_spoof_model:
@@ -1152,15 +1141,15 @@ async def authenticate_by_path(request: dict):
                 "message": "Audio file not found"
             }
 
-        # Проверка на спуфинг с меньшим порогом для снижения ложных срабатываний
+        # Проверка на спуфинг
         spoof_result = anti_spoof_model.detect(audio_path)
         is_spoof = spoof_result.get("is_spoofing_detected", False) or spoof_result.get("is_spoof", False)
         spoof_prob = spoof_result.get("spoof_probability", 0.1)
 
-        # Повышаем порог для снижения количества ложных срабатываний
-        spoof_threshold = 0.6  # Увеличиваем с 0.4 до 0.6
+        # Используем более строгий порог для предотвращения ложных срабатываний
+        spoof_threshold = 0.4  # Снизили с 0.6 для большей чувствительности
 
-        if is_spoof and spoof_prob > spoof_threshold:
+        if is_spoof or spoof_prob > spoof_threshold:
             logger.warning(f"Spoofing detected in file {audio_path}: {spoof_prob:.4f}")
             return {
                 "success": True,
@@ -1171,7 +1160,7 @@ async def authenticate_by_path(request: dict):
                 "user_id": None
             }
 
-        # Извлечение эмбеддинга с улучшенной обработкой
+        # Извлечение эмбеддинга
         embedding = voice_model.extract_embedding(audio_path)
 
         if embedding is None:
@@ -1202,7 +1191,7 @@ async def authenticate_by_path(request: dict):
             "match_score": int(match_result.get("similarity", 0) * 100),
             "spoofing_detected": False,
             "similarity": float(match_result.get("similarity", 0)),
-            "threshold": float(match_result.get("threshold", 0.5)),
+            "threshold": float(match_result.get("threshold", 0.7)),
             "match_found": match_result.get("match_found", False)
         }
 
@@ -1222,18 +1211,21 @@ async def authenticate_by_path(request: dict):
             "success": False,
             "message": str(e)
         }
+
+
 @app.get("/system/reinitialize/status")
 async def get_reinitialize_status():
     """Возвращает текущий статус переинициализации"""
     global reinitialization_status
     return reinitialization_status
 
+
 # Модифицируйте функцию переинициализации
 @app.post("/system/reinitialize")
 def reinitialize_system():
     """Полная переинициализация системы"""
     global reinitialization_status
-    
+
     # Если уже идет процесс, возвращаем текущий статус
     if reinitialization_status["in_progress"]:
         return {
@@ -1241,7 +1233,7 @@ def reinitialize_system():
             "error": "Переинициализация уже выполняется",
             "status": reinitialization_status
         }
-    
+
     try:
         # Устанавливаем статус "в процессе"
         reinitialization_status = {
@@ -1256,10 +1248,10 @@ def reinitialize_system():
                 {"name": "cleanup_models", "status": "pending", "progress": 0}
             ]
         }
-        
+
         # Запускаем переинициализацию в фоновом потоке
         background_tasks.add_task(perform_reinitialize)
-        
+
         return {
             "success": True,
             "message": "Переинициализация запущена",
@@ -1280,55 +1272,57 @@ def reinitialize_system():
             "status": reinitialization_status
         }
 
+
 # Функция фонового выполнения
 async def perform_reinitialize():
     global reinitialization_status, adaptive_threshold, SPOOFING_THRESHOLD
-    
+
     try:
         # Шаг 1: Перезагрузка эмбеддингов
         reinitialization_status["last_status"] = "reloading_embeddings"
         reinitialization_status["progress"] = 0.2
         reinitialization_status["steps"][0]["status"] = "in_progress"
-        
+
         emb_success = force_reload_embeddings()
-        
+
         reinitialization_status["steps"][0]["status"] = "completed" if emb_success else "failed"
         reinitialization_status["steps"][0]["progress"] = 100
-        
+
         # Шаг 2: Сброс порогов
         reinitialization_status["last_status"] = "resetting_thresholds"
         reinitialization_status["progress"] = 0.5
         reinitialization_status["steps"][1]["status"] = "in_progress"
-        
+
         # Сброс порогов
         adaptive_threshold = 0.5
         SPOOFING_THRESHOLD = 0.7
-        
+
         reinitialization_status["steps"][1]["status"] = "completed"
         reinitialization_status["steps"][1]["progress"] = 100
-        
+
         # Шаг 3: Очистка моделей (если нужно)
         reinitialization_status["last_status"] = "cleaning_up"
         reinitialization_status["progress"] = 0.8
         reinitialization_status["steps"][2]["status"] = "in_progress"
-        
+
         # Здесь можно добавить дополнительную очистку...
-        
+
         reinitialization_status["steps"][2]["status"] = "completed"
         reinitialization_status["steps"][2]["progress"] = 100
-        
+
         # Завершение
         reinitialization_status["in_progress"] = False
         reinitialization_status["last_status"] = "completed"
         reinitialization_status["end_time"] = datetime.now().isoformat()
         reinitialization_status["progress"] = 1.0
-        
+
     except Exception as e:
         logger.error(f"Error during system reinitialization: {e}")
         reinitialization_status["in_progress"] = False
         reinitialization_status["last_status"] = "error"
         reinitialization_status["error"] = str(e)
         reinitialization_status["end_time"] = datetime.now().isoformat()
+
 
 @app.post("/reset_embeddings")
 async def reset_embeddings():
@@ -1368,6 +1362,7 @@ async def reset_embeddings():
             "success": False,
             "message": str(e)
         }
+
 
 @app.post("/rebuild_user_embeddings")
 async def rebuild_user_embeddings(user_id: str = None):
@@ -1487,4 +1482,5 @@ async def rebuild_user_embeddings(user_id: str = None):
 # Запуск сервера для локальной разработки
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)# ml_model/app.py
+
+    uvicorn.run(app, host="0.0.0.0", port=5000)  # ml_model/app.py

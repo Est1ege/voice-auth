@@ -1605,6 +1605,72 @@ async def rebuild_user_embeddings(user_id: str = None):
         }
 
 
+@app.route('/model/status', methods=['GET'])
+def model_status():
+    """Возвращает статус ML моделей"""
+    try:
+        global model, anti_spoof_model, user_embeddings
+
+        status = {
+            "voice_model": {
+                "loaded": model is not None,
+                "type": type(model).__name__ if model else "Not loaded",
+                "users_count": len(user_embeddings) if user_embeddings else 0
+            },
+            "anti_spoof_model": {
+                "loaded": anti_spoof_model is not None,
+                "type": type(anti_spoof_model).__name__ if anti_spoof_model else "Not loaded"
+            },
+            "embeddings": {
+                "total_users": len(user_embeddings) if user_embeddings else 0,
+                "total_embeddings": sum(len(embs) for embs in user_embeddings.values()) if user_embeddings else 0
+            },
+            "system": {
+                "device": "GPU" if torch.cuda.is_available() else "CPU",
+                "memory_usage": get_memory_usage(),
+                "models_ready": (model is not None) and (anti_spoof_model is not None)
+            }
+        }
+
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error getting model status: {e}")
+        return jsonify({
+            "error": str(e),
+            "voice_model": {"loaded": False},
+            "anti_spoof_model": {"loaded": False},
+            "embeddings": {"total_users": 0, "total_embeddings": 0},
+            "system": {"models_ready": False}
+        }), 500
+
+
+def get_memory_usage():
+    """Получает информацию об использовании памяти"""
+    try:
+        if torch.cuda.is_available():
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory
+            gpu_allocated = torch.cuda.memory_allocated(0)
+            gpu_reserved = torch.cuda.memory_reserved(0)
+
+            return {
+                "gpu_total": f"{gpu_memory // (1024 ** 3):.1f}GB",
+                "gpu_allocated": f"{gpu_allocated // (1024 ** 3):.1f}GB",
+                "gpu_reserved": f"{gpu_reserved // (1024 ** 3):.1f}GB",
+                "gpu_percent": f"{(gpu_allocated / gpu_memory) * 100:.1f}%"
+            }
+        else:
+            import psutil
+            memory = psutil.virtual_memory()
+            return {
+                "ram_used": f"{memory.used // (1024 ** 3):.1f}GB",
+                "ram_total": f"{memory.total // (1024 ** 3):.1f}GB",
+                "ram_percent": f"{memory.percent:.1f}%"
+            }
+    except Exception as e:
+        logger.error(f"Error getting memory usage: {e}")
+        return {"error": str(e)}
+
+
 # Запуск сервера для локальной разработки
 if __name__ == "__main__":
     import uvicorn

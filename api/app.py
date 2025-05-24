@@ -4,7 +4,8 @@ from fastapi.security import APIKeyHeader
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from datetime import datetime 
+from datetime import datetime, date, time, timedelta
+import psutil
 import os
 import tempfile
 import zipfile
@@ -325,36 +326,83 @@ async def health_check():
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Сервис не работает: {str(e)}")
 
+
+# Замените существующий эндпоинт /api/system/status в api/app.py
+
 @app.get("/api/system/status")
 async def system_status(db=Depends(get_db)):
+    """Получение подробного статуса системы"""
     try:
-        # Проверка статуса ML сервиса
+        # 1. Проверка статуса ML сервиса
+        ml_status = "error"
+        ml_details = {}
         try:
-            ml_status = "ok"
-            await call_ml_service("health", {})
-        except:
+            ml_response = await call_ml_service("GET", "/health")
+            if ml_response:
+                ml_status = "ok"
+                ml_details = ml_response
+        except Exception as e:
+            logger.error(f"ML service health check failed: {e}")
             ml_status = "error"
-        
-        # Подсчет пользователей
-        users_count = await db.users.count_documents({})
-        active_users_count = await db.users.count_documents({"active": True})
-        
-        # Определение устройства вычислений
-        # (это может быть заменено на реальное определение устройства, если необходимо)
-        device = "CPU"  # или "GPU" если используется GPU
-        
+
+        # 2. Проверка статуса базы данных
+        db_status = "error"
+        db_details = {}
+        try:
+            # Проверяем подключение к БД
+            await db.command("ping")
+            db_status = "ok"
+
+            # Получаем статистику БД
+            db_stats = await db.command("dbStats")
+            db_details = {
+                "collections": db_stats.get("collections", 0),
+                "dataSize": db_stats.get("dataSize", 0),
+                "storageSize": db_stats.get("storageSize", 0),
+                "indexes": db_stats.get("indexes", 0)
+            }
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            db_status = "error"
+
+        # 3. Подсчет пользователей
+        users_count = 0
+        active_users_count = 0
+        try:
+            users_count = await db.users.count_documents({})
+            active_users_count = await db.users.count_documents({"active": True})
+        except Exception as e:
+            logger.error(f"Error counting users: {e}")
+
+        # 4. Статистика по событиям за сегодня
+        today_stats = await get_today_statistics(db)
+
+        # 5. Информация о системных ресурсах
+        system_info = get_system_resources()
+
+        # 6. Статус моделей ML
+        model_status = await get_model_status()
+
         return {
             "api_status": "ok",
             "ml_status": ml_status,
-            "db_status": "ok" if db else "error",
+            "db_status": db_status,
             "users_count": users_count,
             "active_users_count": active_users_count,
-            "device": device  # Добавляем поле device
+            "device": system_info.get("device", "CPU"),
+            "api_version": "1.0.0",
+            "uptime": system_info.get("uptime", "unknown"),
+            "memory_usage": system_info.get("memory_usage", "unknown"),
+            "cpu_usage": system_info.get("cpu_usage", "unknown"),
+            "disk_usage": system_info.get("disk_usage", {}),
+            "today_stats": today_stats,
+            "ml_details": ml_details,
+            "db_details": db_details,
+            "model_status": model_status,
+            "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
-        # Вместо вызова HTTPException возвращаем объект с ошибкой
-        # чтобы не возвращать 500 статус
         return {
             "api_status": "error",
             "ml_status": "unknown",
@@ -362,8 +410,141 @@ async def system_status(db=Depends(get_db)):
             "users_count": 0,
             "active_users_count": 0,
             "device": "Unknown",
-            "error": str(e)
+            "api_version": "1.0.0",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
         }
+
+
+async def get_today_statistics(db):
+    """Получает статистику событий за сегодня"""
+    try:
+        today_start = datetime.combine(datetime.now().date(), datetime.min.time())
+        today_end = datetime.combine(datetime.now().date(), datetime.max.time())
+
+        # Подсчет различных типов событий за сегодня
+        pipeline = [
+            {
+                "$match": {
+                    "timestamp": {
+                        "$gte": today_start,
+                        "$lte": today_end
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$event_type",
+                    "count": {"$sum": 1}
+                }
+            }
+        ]
+
+        results = await db.logs.aggregate(pipeline).to_list(100)
+
+        stats = {
+            "successful_auths": 0,
+            "failed_auths": 0,
+            "spoofing_attempts": 0,
+            "total_events": 0
+        }
+
+        for result in results:
+            event_type = result.get("_id", "")
+            count = result.get("count", 0)
+
+            if event_type == "authorization_successful":
+                stats["successful_auths"] = count
+            elif event_type == "authorization_attempt":
+                stats["failed_auths"] = count
+            elif event_type == "spoofing_attempt":
+                stats["spoofing_attempts"] = count
+
+            stats["total_events"] += count
+
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting today statistics: {e}")
+        return {
+            "successful_auths": 0,
+            "failed_auths": 0,
+            "spoofing_attempts": 0,
+            "total_events": 0
+        }
+
+
+def get_system_resources():
+    """Получает информацию о системных ресурсах"""
+    import psutil
+    import shutil
+
+    try:
+        # Информация о памяти
+        memory = psutil.virtual_memory()
+        memory_usage = f"{memory.used // (1024 ** 3):.1f}GB / {memory.total // (1024 ** 3):.1f}GB ({memory.percent}%)"
+
+        # Информация о CPU
+        cpu_usage = f"{psutil.cpu_percent(interval=1)}%"
+
+        # Информация о диске
+        disk_usage = {}
+        try:
+            total, used, free = shutil.disk_usage("/shared")
+            disk_usage = {
+                "total": total,
+                "used": used,
+                "free": free,
+                "percent": (used / total) * 100
+            }
+        except Exception:
+            disk_usage = {"total": 0, "used": 0, "free": 0, "percent": 0}
+
+        # Время работы системы (упрощенная версия)
+        try:
+            with open('/proc/uptime', 'r') as f:
+                uptime_seconds = float(f.readline().split()[0])
+                uptime_hours = int(uptime_seconds // 3600)
+                uptime_days = uptime_hours // 24
+                uptime_hours = uptime_hours % 24
+                uptime = f"{uptime_days}d {uptime_hours}h"
+        except Exception:
+            uptime = "unknown"
+
+        # Определение устройства (CPU/GPU)
+        device = "CPU"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                device = f"GPU ({torch.cuda.get_device_name()})"
+        except ImportError:
+            pass
+
+        return {
+            "memory_usage": memory_usage,
+            "cpu_usage": cpu_usage,
+            "disk_usage": disk_usage,
+            "uptime": uptime,
+            "device": device
+        }
+    except Exception as e:
+        logger.error(f"Error getting system resources: {e}")
+        return {
+            "memory_usage": "unknown",
+            "cpu_usage": "unknown",
+            "disk_usage": {"total": 0, "used": 0, "free": 0, "percent": 0},
+            "uptime": "unknown",
+            "device": "Unknown"
+        }
+
+
+async def get_model_status():
+    """Получает статус ML моделей"""
+    try:
+        model_info = await call_ml_service("GET", "/model/status")
+        return model_info if model_info else {"status": "unknown"}
+    except Exception as e:
+        logger.error(f"Error getting model status: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/users")
 async def get_users(db=Depends(get_db)):

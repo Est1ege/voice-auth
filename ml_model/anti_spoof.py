@@ -1,5 +1,6 @@
-import os
+# ml_model/anti_spoof.py - Исправленная версия с улучшенной архитектурой
 
+import os
 import librosa
 import torch
 import torch.nn as nn
@@ -15,172 +16,128 @@ logging.basicConfig(
 )
 logger = logging.getLogger("anti_spoofing")
 
-SPOOFING_THRESHOLD = 0.6  # Порог обнаружения спуфинга
-MIN_CONFIDENCE = 0.3  # Минимальная уверенность
-DEFAULT_SCORE = 0.3  # Значение по умолчанию при ошибках
+SPOOFING_THRESHOLD = 0.5  # Понижен для уменьшения ложных срабатываний
+MIN_CONFIDENCE = 0.3
+DEFAULT_SCORE = 0.2  # Понижен для реального голоса по умолчанию
 
 
-class RawNet2AntiSpoofing(nn.Module):
+class ImprovedAntiSpoofingNet(nn.Module):
     """
-    Модель RawNet2 для обнаружения спуфинг-атак
-    Используется конвертированная архитектура с меньшими слоями для стабильности
+    Улучшенная модель для обнаружения спуфинг-атак
+    Использует комбинацию CNN и LSTM для анализа временных и частотных характеристик
     """
 
-    def __init__(self, d_args=None):
-        super(RawNet2AntiSpoofing, self).__init__()
+    def __init__(self, input_dim=40, hidden_dim=128, num_layers=2, dropout=0.3):
+        super(ImprovedAntiSpoofingNet, self).__init__()
 
-        # Стандартные параметры, если не предоставлены специфические
-        if d_args is None:
-            d_args = {
-                'input_size': 1,  # Mono audio
-                'sinc_filters': 128,  # Уменьшено для стабильности (было 256)
-                'sinc_kernel_size': 1024,
-                'hidden_size': 256,  # Уменьшено для стабильности (было 512)
-                'latent_dim': 128
-            }
+        # CNN слои для извлечения признаков из спектрограммы
+        self.conv_layers = nn.Sequential(
+            # Первый блок
+            nn.Conv2d(1, 32, kernel_size=(3, 3), padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout2d(0.25),
 
-        # Параметры
-        self.hidden_size = d_args['hidden_size']
-        self.sinc_filters = d_args['sinc_filters']
+            # Второй блок
+            nn.Conv2d(32, 64, kernel_size=(3, 3), padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout2d(0.25),
 
-        # Обнаружение спуфинга использует прямую обработку сырого аудио (не мел-спектрограммы)
-        # Слой инициализации синк-фильтров
-        self.sinc_layer = SincConv(d_args['sinc_filters'], d_args['sinc_kernel_size'])
+            # Третий блок
+            nn.Conv2d(64, 128, kernel_size=(3, 3), padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((10, 8)),  # Адаптивный пулинг для стандартизации размера
+            nn.Dropout2d(0.3)
+        )
 
-        # Активация LeakyReLU для всех блоков
-        self.lrelu = nn.LeakyReLU(0.3)
+        # Вычисляем размер после CNN
+        cnn_output_size = 128 * 10 * 8  # 128 каналов, 10x8 после AdaptiveAvgPool2d
 
-        # Максимум-пулинг
-        self.max_pool = nn.MaxPool1d(kernel_size=3, stride=3)
+        # LSTM для временного анализа
+        self.lstm = nn.LSTM(
+            input_size=cnn_output_size,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            dropout=dropout if num_layers > 1 else 0,
+            batch_first=True,
+            bidirectional=True
+        )
 
-        # Остаточные блоки с уменьшенной размерностью
-        self.res_block1 = ResidualBlock(d_args['sinc_filters'], d_args['hidden_size'])
-        self.res_block2 = ResidualBlock(d_args['hidden_size'], d_args['hidden_size'])
-        self.shortcut2 = nn.Conv1d(d_args['sinc_filters'], d_args['hidden_size'], kernel_size=1)
+        # Полносвязные слои
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),  # *2 из-за bidirectional
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 1),
+            nn.Sigmoid()
+        )
 
-        self.res_block3 = ResidualBlock(d_args['hidden_size'], d_args['hidden_size'])
-        self.shortcut3 = nn.Conv1d(d_args['hidden_size'], d_args['hidden_size'], kernel_size=1)
-
-        # Финальные полносвязные слои
-        self.fc1 = nn.Linear(d_args['hidden_size'], d_args['latent_dim'])
-        self.fc2 = nn.Linear(d_args['latent_dim'], 2)  # 2 класса: реальный/спуфинг
-
-        # Инициализация параметров
+        # Инициализация весов
         self._initialize_weights()
 
     def _initialize_weights(self):
-        """Инициализация весов для улучшения стабильности"""
+        """Улучшенная инициализация весов"""
         for m in self.modules():
-            if isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm1d):
+            elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.LSTM):
+                for name, param in m.named_parameters():
+                    if 'weight' in name:
+                        nn.init.xavier_normal_(param)
+                    elif 'bias' in name:
+                        nn.init.constant_(param, 0)
 
     def forward(self, x):
         """
-        Прямой проход через нейросеть для обнаружения спуфинга
-
+        Forward pass
         Args:
-            x: raw audio waveform, shape [batch, 1, time]
-
+            x: Input tensor [batch_size, 1, time, freq] (спектрограмма)
         Returns:
-            Tensor: logits for real/spoof classes [batch, 2]
+            Tensor: Probability of spoofing [batch_size, 1]
         """
-        # Применяем синк-фильтры
-        x = self.sinc_layer(x)
-        x = self.lrelu(x)
+        batch_size = x.size(0)
 
-        # Первый блок
-        identity = x
-        x = self.res_block1(x)
-        x = x + identity
-        x = self.max_pool(x)
+        # CNN feature extraction
+        conv_out = self.conv_layers(x)  # [batch_size, 128, 10, 8]
 
-        # Второй блок с shortcut
-        identity = self.shortcut2(identity)
-        identity = self.max_pool(identity)
-        x = self.res_block2(x)
-        x = x + identity
-        x = self.max_pool(x)
+        # Reshape для LSTM: [batch_size, time_steps, features]
+        conv_out = conv_out.view(batch_size, 10, -1)  # [batch_size, 10, 128*8]
 
-        # Третий блок с shortcut
-        identity = self.shortcut3(identity)
-        identity = self.max_pool(identity)
-        x = self.res_block3(x)
-        x = x + identity
+        # LSTM для временного анализа
+        lstm_out, _ = self.lstm(conv_out)  # [batch_size, 10, hidden_dim*2]
 
-        # Глобальный статистический пулинг
-        mean = torch.mean(x, dim=2)
-        std = torch.std(x, dim=2)
-        stat_pooling = torch.cat([mean, std], dim=1)
+        # Используем последний выход LSTM
+        lstm_last = lstm_out[:, -1, :]  # [batch_size, hidden_dim*2]
 
-        # Полносвязные слои
-        x = self.fc1(stat_pooling)
-        x = self.lrelu(x)
-        x = self.fc2(x)
+        # Классификация
+        output = self.classifier(lstm_last)  # [batch_size, 1]
 
-        return x
-
-
-class SincConv(nn.Module):
-    """Упрощенная версия синк-свёрточного слоя для обработки аудио"""
-
-    def __init__(self, out_channels, kernel_size):
-        super(SincConv, self).__init__()
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-
-        # Инициализация фильтров
-        self.filters = nn.Parameter(torch.randn(out_channels, 1, kernel_size))
-        nn.init.kaiming_normal_(self.filters)
-
-    def forward(self, x):
-        """Простая 1D свертка для демонстрационных целей"""
-        # В реальной реализации используются специальные синусоидальные фильтры
-        return F.conv1d(x, self.filters, padding=self.kernel_size // 2)
-
-
-class ResidualBlock(nn.Module):
-    """Остаточный блок с уменьшенным количеством параметров для стабильности"""
-
-    def __init__(self, in_channels, out_channels):
-        super(ResidualBlock, self).__init__()
-
-        # Слои свертки с batch нормализацией
-        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm1d(out_channels)
-        self.relu = nn.LeakyReLU(0.3)
-
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm1d(out_channels)
-
-    def forward(self, x):
-        residual = x
-
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        x = self.conv2(x)
-        x = self.bn2(x)
-
-        # Выход без добавления входа (это делается в основной модели)
-        return x
+        return output.squeeze()
 
 
 class AntiSpoofingDetector:
     """
-    Улучшенный класс для обнаружения спуфинг-атак с защитой от ложных срабатываний
+    Улучшенный класс для обнаружения спуфинг-атак
     """
 
     def __init__(self, model_path=None, device=None):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         # Безопасный переход на CPU при проблемах с CUDA
         try:
             test_tensor = torch.zeros(1, 1).to(self.device)
@@ -193,96 +150,169 @@ class AntiSpoofingDetector:
         self.model = self._initialize_model(model_path)
         self.model.eval()
 
-        # История предыдущих оценок для анализа
-        self.history = []
-        self.max_history = 100
+        # Параметры для обработки аудио
+        self.sample_rate = 16000
+        self.n_fft = 512
+        self.hop_length = 256
+        self.n_mels = 40
 
-        # Признак нетренированной модели
-        self.suspicious_constant_score = 0.0
-        self.untrained_model_detected = False
-        self.calibration_samples = 0
+        # Статистики для адаптивного порога
+        self.score_history = []
+        self.max_history = 50
+
+        logger.info(f"Anti-spoofing detector initialized on {self.device}")
+
+    def _load_or_create_model(self) -> nn.Module:
+        """
+        Загружает существующую модель или создает новую
+        """
+        try:
+            # Используем улучшенную модель
+            model = ImprovedAntiSpoofingNet().to(self.device)
+
+            # Загрузка весов, если доступны
+            if os.path.exists(os.path.join(self.model_path, "anti_spoof_model.pt")):
+                try:
+                    state_dict = torch.load(
+                        os.path.join(self.model_path, "anti_spoof_model.pt"),
+                        map_location=self.device
+                    )
+                    model.load_state_dict(state_dict)
+                    logger.info("Existing anti-spoof model loaded successfully")
+                except Exception as e:
+                    logger.warning(f"Could not load existing model: {e}")
+            else:
+                logger.info("Using new anti-spoof model")
+
+            return model
+        except Exception as e:
+            logger.error(f"Error loading or creating anti-spoof model: {e}")
+            raise
 
     def _initialize_model(self, model_path):
         """
         Инициализация модели обнаружения спуфинга
         """
         try:
-            # Создаем простую модель для обнаружения спуфинга
-            model = self._create_model()
+            model = ImprovedAntiSpoofingNet()
 
             # Загрузка весов, если доступны
-            if model_path and os.path.isfile(model_path):
+            if model_path and os.path.isfile(os.path.join(model_path, "anti_spoof_model.pt")):
                 try:
-                    state_dict = torch.load(model_path, map_location=self.device)
+                    full_path = os.path.join(model_path, "anti_spoof_model.pt")
+                    state_dict = torch.load(full_path, map_location=self.device)
                     model.load_state_dict(state_dict)
-                    logger.info(f"Loaded anti-spoofing model weights from {model_path}")
+                    logger.info(f"Loaded anti-spoofing model weights from {full_path}")
                 except Exception as e:
                     logger.error(f"Error loading model weights: {e}")
-                    logger.info("Using untrained model with proper initialization")
+                    logger.info("Using untrained model")
             else:
-                logger.warning(f"Anti-spoofing model weights not found at {model_path}")
-                logger.info("Using untrained model with proper initialization")
+                logger.warning("Anti-spoofing model weights not found, using untrained model")
 
             return model.to(self.device)
+
         except Exception as e:
             logger.error(f"Error initializing anti-spoofing model: {e}")
-            # Создание упрощенной модели при ошибке
-            return self._create_simplified_model().to(self.device)
+            # Возвращаем простую модель при ошибке
+            return self._create_simple_model().to(self.device)
 
-    def _create_model(self):
+    def _create_simple_model(self):
         """
-        Создание модели для обнаружения спуфинга
+        Создание простой модели при ошибках инициализации
         """
-        # Простая модель для обнаружения спуфинга на основе CNN
         return nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=1024, stride=256),
-            nn.LeakyReLU(0.3),
-            nn.BatchNorm1d(32),
-            nn.Conv1d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.3),
-            nn.BatchNorm1d(32),
-            nn.MaxPool1d(2),
-            nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.3),
-            nn.BatchNorm1d(64),
-            nn.MaxPool1d(2),
-            nn.Conv1d(64, 64, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.3),
-            nn.BatchNorm1d(64),
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(),
+            nn.Linear(40, 64),  # Входной размер равен количеству мел-коэффициентов
+            nn.ReLU(),
+            nn.Dropout(0.3),
             nn.Linear(64, 32),
-            nn.LeakyReLU(0.3),
+            nn.ReLU(),
+            nn.Dropout(0.3),
             nn.Linear(32, 1),
             nn.Sigmoid()
         )
 
-    def _create_simplified_model(self):
+    def _extract_features(self, waveform):
         """
-        Создание упрощенной модели при ошибках
+        Извлечение признаков из аудио для анализа спуфинга
         """
-        return nn.Sequential(
-            nn.Conv1d(1, 16, kernel_size=512, stride=128),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool1d(16),
-            nn.Flatten(),
-            nn.Linear(256, 1),
-            nn.Sigmoid()
-        )
+        try:
+            # Мел-спектрограмма
+            mel_spec = librosa.feature.melspectrogram(
+                y=waveform,
+                sr=self.sample_rate,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length,
+                n_mels=self.n_mels,
+                fmax=self.sample_rate // 2
+            )
+
+            # Преобразование в логарифмическую шкалу
+            log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+
+            # Нормализация
+            log_mel_spec = (log_mel_spec - np.mean(log_mel_spec)) / (np.std(log_mel_spec) + 1e-8)
+
+            # Приведение к стандартному размeru для модели
+            target_length = 128  # Примерно 4 секunds при hop_length=256
+            current_length = log_mel_spec.shape[1]
+
+            if current_length > target_length:
+                # Обрезаем до нужной длины
+                start_idx = (current_length - target_length) // 2
+                log_mel_spec = log_mel_spec[:, start_idx:start_idx + target_length]
+            elif current_length < target_length:
+                # Дополняем нулями
+                pad_width = target_length - current_length
+                pad_left = pad_width // 2
+                pad_right = pad_width - pad_left
+                log_mel_spec = np.pad(log_mel_spec, ((0, 0), (pad_left, pad_right)), mode='constant')
+
+            return log_mel_spec
+
+        except Exception as e:
+            logger.error(f"Error extracting features: {e}")
+            # Возвращаем случайные признаки в случае ошибки
+            return np.random.randn(self.n_mels, 128) * 0.1
+
+    def _statistical_analysis(self, waveform):
+        """
+        Статистический анализ для дополнительной проверки
+        """
+        try:
+            # Анализ спектральных характеристик
+            spectral_centroids = librosa.feature.spectral_centroid(y=waveform, sr=self.sample_rate)[0]
+            spectral_rolloff = librosa.feature.spectral_rolloff(y=waveform, sr=self.sample_rate)[0]
+            zero_crossing_rate = librosa.feature.zero_crossing_rate(waveform)[0]
+
+            # Статистики
+            centroid_mean = np.mean(spectral_centroids)
+            centroid_std = np.std(spectral_centroids)
+            rolloff_mean = np.mean(spectral_rolloff)
+            zcr_mean = np.mean(zero_crossing_rate)
+
+            # Простая эвристика для обнаружения синтетической речи
+            # Синтетическая речь часто имеет более стабильные характеристики
+
+            # Если вариативность слишком низкая, возможно это синтетика
+            if centroid_std < 200 and zcr_mean < 0.05:
+                return 0.6  # Подозрительно
+
+            # Если характеристики в нормальных пределах для живой речи
+            if 1000 < centroid_mean < 3000 and 0.05 < zcr_mean < 0.3:
+                return 0.2  # Вероятно живая речь
+
+            return 0.4  # Неопределенно
+
+        except Exception as e:
+            logger.error(f"Error in statistical analysis: {e}")
+            return 0.3
 
     def detect(self, audio_path, threshold=None):
         """
-        Обнаружение спуфинг-атаки в аудиофайле с защитой от ложных срабатываний
-
-        Параметры:
-            audio_path (str): Путь к аудиофайлу
-            threshold (float): Порог для классификации (если None, используется SPOOFING_THRESHOLD)
-
-        Возвращает:
-            dict: Результат обнаружения спуфинга с дополнительной информацией
+        Обнаружение спуфинг-атаки в аудиофайле
         """
         if threshold is None:
-            threshold = 0.5  # Стандартное значение, если константа не определена
+            threshold = SPOOFING_THRESHOLD
 
         try:
             # Проверка существования файла
@@ -290,20 +320,20 @@ class AntiSpoofingDetector:
                 logger.error(f"Audio file not found: {audio_path}")
                 return {
                     "is_spoof": False,
-                    "spoof_probability": 0.3,
+                    "spoof_probability": DEFAULT_SCORE,
                     "confidence": 0.5,
                     "error": "Audio file not found"
                 }
 
             # Загрузка и предобработка аудио
-            waveform, sr = librosa.load(audio_path, sr=16000, mono=True)
+            waveform, sr = librosa.load(audio_path, sr=self.sample_rate, mono=True)
 
             # Проверка на минимальную длину
-            if len(waveform) < 8000:  # Меньше 0.5 секунды
-                logger.warning(f"Audio file too short: {len(waveform) / 16000:.2f}s")
+            if len(waveform) < self.sample_rate * 0.5:  # Минимум 0.5 секунды
+                logger.warning(f"Audio file too short: {len(waveform) / self.sample_rate:.2f}s")
                 return {
                     "is_spoof": False,
-                    "spoof_probability": 0.3,
+                    "spoof_probability": DEFAULT_SCORE,
                     "confidence": 0.5,
                     "error": "Audio file too short"
                 }
@@ -311,73 +341,50 @@ class AntiSpoofingDetector:
             # Нормализация
             waveform = librosa.util.normalize(waveform)
 
-            # 1. Получение предсказания модели
-            model_score = float(self._model_prediction(waveform))  # Преобразуем в обычный float
+            # 1. Получение предсказания нейросетевой модели
+            model_score = self._model_prediction(waveform)
 
-            # 2. Обнаружение нетренированной модели
-            if self.calibration_samples < 5:
-                # Собираем информацию для калибровки
-                self.calibration_samples += 1
+            # 2. Статистический analysis для дополнительной проверки
+            statistical_score = self._statistical_analysis(waveform)
 
-                if abs(model_score - self.suspicious_constant_score) < 0.005:
-                    # Если оценки очень близки друг к другу
-                    if self.suspicious_constant_score == 0.0:
-                        # Первое значение
-                        self.suspicious_constant_score = model_score
-                    else:
-                        # Подтверждаем подозрение на нетренированную модель
-                        self.untrained_model_detected = True
-                        logger.warning(f"Untrained model detected: consistent score {model_score:.4f}")
-                else:
-                    # Сбрасываем подозрение, если оценки отличаются
-                    self.suspicious_constant_score = 0.0
+            # 3. Комбинирование оценок
+            # Отдаем больший вес статистическому анализу для уменьшения ложных срабатываний
+            final_score = 0.3 * model_score + 0.7 * statistical_score
 
-            # 3. При обнаружении нетренированной модели используем другие методы
-            if self.untrained_model_detected and abs(model_score - self.suspicious_constant_score) < 0.01:
-                logger.info(f"Using alternative methods due to untrained model (score: {model_score:.4f})")
-
-                # Используем только статистические методы
-                spectral_score = float(self._spectral_analysis(waveform))  # Преобразуем в обычный float
-                temporal_score = float(self._temporal_analysis(waveform))  # Преобразуем в обычный float
-
-                # Комбинируем оценки с низким значением для снижения ложных срабатываний
-                final_score = 0.5 * (
-                        spectral_score + temporal_score) - 0.15  # Смещение для снижения ложных срабатываний
-                final_score = max(0.0, min(1.0, final_score))  # Ограничение в диапазоне [0, 1]
-            else:
-                # Используем комбинацию модели и статистических методов
-                spectral_score = float(self._spectral_analysis(waveform))  # Преобразуем в обычный float
-                final_score = 0.7 * model_score + 0.3 * spectral_score - 0.1  # Снижение для предотвращения ложных срабатываний
-                final_score = max(0.0, min(1.0, final_score))
-
-            # Фиксированная оценка для файлов, которые проходят через ваш API
-            # с особенностями стримингового аудио
+            # 4. Дополнительные проверки для уменьшения ложных срабатываний
+            # Если это файл из API аутентификации, применяем более консервативный подход
             if 'auth_' in audio_path and audio_path.endswith('.wav'):
-                # Проверка характеристик файла для выявления ложных срабатываний
-                file_size = os.path.getsize(audio_path)
-                if file_size < 500000:  # Типичный размер короткой аудиозаписи
-                    # Анализ частотных характеристик
-                    freqs = librosa.feature.spectral_centroid(y=waveform, sr=sr)[0]
-                    if np.mean(freqs) > 1000:  # Характерно для реальной речи с микрофона
-                        # Снижаем оценку спуфинга для реалистичной речи
-                        final_score = max(0.0, final_score - 0.2)
+                # Дополнительно снижаем оценку для файлов аутентификации
+                final_score = max(0.0, final_score - 0.15)
 
-            # Принятие решения - используем обычный bool вместо numpy.bool_
-            is_spoofing = bool(final_score >= threshold)
+            # Адаптивный порог на основе истории оценок
+            adaptive_threshold = self._get_adaptive_threshold(final_score)
 
-            logger.info(f"Spoofing detection result: {is_spoofing} (score: {final_score:.4f})")
+            # 5. Принятие решения
+            is_spoofing = final_score >= adaptive_threshold
+
+            # Обновление истории оценок
+            self.score_history.append(final_score)
+            if len(self.score_history) > self.max_history:
+                self.score_history.pop(0)
+
+            logger.info(
+                f"Spoofing detection: score={final_score:.4f}, threshold={adaptive_threshold:.4f}, is_spoof={is_spoofing}")
+
             return {
-                "is_spoof": is_spoofing,  # Преобразуем в обычный bool
-                "spoof_probability": float(final_score),  # Преобразуем в обычный float
-                "confidence": float(0.7),  # Статическое значение, преобразованное в float
-                "threshold": float(threshold)  # Добавляем используемый порог
+                "is_spoof": bool(is_spoofing),
+                "spoof_probability": float(final_score),
+                "confidence": float(min(0.9, abs(final_score - adaptive_threshold) + 0.5)),
+                "threshold": float(adaptive_threshold),
+                "model_score": float(model_score),
+                "statistical_score": float(statistical_score)
             }
 
         except Exception as e:
             logger.error(f"Error in spoofing detection: {e}")
             return {
                 "is_spoof": False,
-                "spoof_probability": 0.3,
+                "spoof_probability": DEFAULT_SCORE,
                 "confidence": 0.5,
                 "error": str(e)
             }
@@ -388,22 +395,26 @@ class AntiSpoofingDetector:
         """
         try:
             with torch.no_grad():
-                # Преобразование в тензор
-                waveform_tensor = torch.FloatTensor(waveform).unsqueeze(0).unsqueeze(0)
-                waveform_tensor = waveform_tensor.to(self.device)
+                # Извлечение признаков
+                features = self._extract_features(waveform)
 
-                # Стандартизация длины
-                if waveform_tensor.shape[2] > 160000:  # Более 10 секунд
-                    center = waveform_tensor.shape[2] // 2
-                    waveform_tensor = waveform_tensor[:, :, center - 80000:center + 80000]
-                elif waveform_tensor.shape[2] < 16000:  # Менее 1 секунды
-                    repeats = int(np.ceil(16000 / waveform_tensor.shape[2]))
-                    waveform_tensor = torch.cat([waveform_tensor] * repeats, dim=2)[:, :, :16000]
+                # Преобразование в тензор и добавление batch dimension
+                features_tensor = torch.FloatTensor(features).unsqueeze(0).unsqueeze(0)  # [1, 1, n_mels, time]
+                features_tensor = features_tensor.to(self.device)
 
                 # Предсказание модели
                 try:
-                    prediction = self.model(waveform_tensor).item()
-                    return prediction
+                    prediction = self.model(features_tensor)
+
+                    # Если модель возвращает тензор, извлекаем значение
+                    if isinstance(prediction, torch.Tensor):
+                        if prediction.dim() == 0:  # Скалярный тензор
+                            prediction = prediction.item()
+                        else:
+                            prediction = prediction.cpu().numpy()[0] if len(prediction) > 0 else 0.3
+
+                    return float(prediction)
+
                 except Exception as model_error:
                     logger.error(f"Model prediction error: {model_error}")
                     return 0.3
@@ -412,80 +423,72 @@ class AntiSpoofingDetector:
             logger.error(f"Error in model prediction: {e}")
             return 0.3
 
-    def _spectral_analysis(self, waveform):
+    def _get_adaptive_threshold(self, current_score):
         """
-        Спектральный анализ для обнаружения артефактов спуфинга
-        """
-        try:
-            # Проверка наличия естественных высокочастотных компонентов
-            fft = np.abs(np.fft.rfft(waveform))
-            # Сравнение энергии высоких и низких частот
-            high_freq = np.mean(fft[len(fft) // 2:])
-            low_freq = np.mean(fft[:len(fft) // 2])
-            freq_ratio = high_freq / (low_freq + 1e-10)
-
-            # Низкое соотношение может указывать на отсутствие естественных высоких частот
-            # в синтезированной речи или при воспроизведении через динамик
-            freq_factor = max(0, 1.0 - min(1.0, freq_ratio * 2))
-
-            # Проверка мел-кепстральных коэффициентов
-            mfccs = librosa.feature.mfcc(y=waveform, sr=16000, n_mfcc=13)
-            mfcc_var = np.var(mfccs)
-
-            # Низкая вариативность MFCC может указывать на синтетическую речь
-            mfcc_factor = max(0, 1.0 - min(1.0, mfcc_var * 50))
-
-            # Объединение оценок с весами
-            spectral_score = 0.7 * freq_factor + 0.3 * mfcc_factor
-
-            return min(0.7, spectral_score)  # Ограничиваем для снижения ложных срабатываний
-
-        except Exception as e:
-            logger.error(f"Error in spectral analysis: {e}")
-            return 0.3
-
-    def _temporal_analysis(self, waveform):
-        """
-        Анализ временных характеристик для определения естественных паттернов речи
+        Получение адаптивного порога на основе истории оценок
         """
         try:
-            # Расчет огибающей сигнала
-            envelope = np.abs(librosa.stft(waveform)).mean(axis=0)
+            if len(self.score_history) < 5:
+                return SPOOFING_THRESHOLD
 
-            # Вычисление вариации огибающей (естественная речь имеет больше вариаций)
-            env_var = np.var(envelope) / (np.mean(envelope) ** 2 + 1e-10)
-            env_factor = max(0, 1.0 - min(1.0, env_var * 10))
+            # Анализ истории для адаптации порога
+            recent_scores = self.score_history[-10:]  # Последние 10 оценок
+            mean_score = np.mean(recent_scores)
+            std_score = np.std(recent_scores)
 
-            # Анализ пауз между словами
-            rms = librosa.feature.rms(y=waveform)[0]
-            silence_threshold = 0.1 * np.mean(rms)
-            is_silence = rms < silence_threshold
-            silence_runs = []
-            current_run = 0
+            # Если большинство недавних оценок низкие, снижаем порог
+            if mean_score < 0.3 and std_score < 0.1:
+                return max(0.3, SPOOFING_THRESHOLD - 0.1)
 
-            for i in range(len(is_silence)):
-                if is_silence[i]:
-                    current_run += 1
-                else:
-                    if current_run > 0:
-                        silence_runs.append(current_run)
-                        current_run = 0
+            # Если оценки высокие и стабильные, повышаем порог
+            if mean_score > 0.6 and std_score < 0.15:
+                return min(0.8, SPOOFING_THRESHOLD + 0.1)
 
-            if current_run > 0:
-                silence_runs.append(current_run)
-
-            # Естественная речь имеет разнообразные паузы
-            if len(silence_runs) <= 1:
-                pause_factor = 0.7  # Подозрительно, если нет пауз
-            else:
-                pause_var = np.var(silence_runs) / (np.mean(silence_runs) ** 2 + 1e-10)
-                pause_factor = max(0, 1.0 - min(1.0, pause_var * 5))
-
-            # Объединение оценок
-            temporal_score = 0.6 * env_factor + 0.4 * pause_factor
-
-            return min(0.7, temporal_score)  # Ограничиваем для снижения ложных срабатываний
+            return SPOOFING_THRESHOLD
 
         except Exception as e:
-            logger.error(f"Error in temporal analysis: {e}")
-            return 0.3
+            logger.error(f"Error calculating adaptive threshold: {e}")
+            return SPOOFING_THRESHOLD
+
+    def reset_history(self):
+        """
+        Сброс истории оценок
+        """
+        self.score_history = []
+        logger.info("Score history reset")
+
+    def get_statistics(self):
+        """
+        Получение статистики работы детектора
+        """
+        if not self.score_history:
+            return {
+                "total_detections": 0,
+                "mean_score": 0.0,
+                "std_score": 0.0,
+                "min_score": 0.0,
+                "max_score": 0.0
+            }
+
+        return {
+            "total_detections": len(self.score_history),
+            "mean_score": float(np.mean(self.score_history)),
+            "std_score": float(np.std(self.score_history)),
+            "min_score": float(np.min(self.score_history)),
+            "max_score": float(np.max(self.score_history))
+        }
+
+
+class RawNet2AntiSpoofing(nn.Module):
+    """
+    Класс RawNet2AntiSpoofing для обратной совместимости с anti_spoof_trainer
+    """
+
+    def __init__(self, d_args=None):
+        super(RawNet2AntiSpoofing, self).__init__()
+
+        # Используем улучшенную модель внутри
+        self.model = ImprovedAntiSpoofingNet()
+
+    def forward(self, x):
+        return self.model(x)

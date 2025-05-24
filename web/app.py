@@ -526,10 +526,62 @@ def filesystem_diagnosis():
         flash(f'Ошибка при получении данных файловой системы: {str(e)}', 'danger')
         return redirect(url_for('system_status'))
 
-@app.route('/admin/training')
+
+@app.route('/admin/training/cleanup', methods=['POST'])
+@admin_required
+def cleanup_trainings():
+    """Очистка старых задач тренировки"""
+    try:
+        max_age_days = int(request.form.get('max_age_days', 7))
+
+        response = requests.delete(f"{API_URL}/api/training/cleanup?max_age_days={max_age_days}")
+
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                removed_count = result.get('removed_count', 0)
+                flash(f'Удалено {removed_count} старых задач тренировки', 'success')
+            else:
+                flash(f'Ошибка при очистке: {result.get("message")}', 'danger')
+        else:
+            flash('Ошибка при очистке задач тренировки', 'danger')
+
+    except ValueError:
+        flash('Неверное значение возраста задач', 'danger')
+    except Exception as e:
+        flash(f'Ошибка при очистке: {str(e)}', 'danger')
+
+    return redirect(url_for('training_list'))
+
+
+@app.route('/admin/training/dashboard')
 @admin_required
 def training_dashboard():
-    return render_template('admin/training.html', username=session['username'])
+    """Главная панель управления тренировками"""
+    try:
+        # Получаем статистику
+        stats_response = requests.get(f"{API_URL}/api/training/stats")
+        stats = stats_response.json() if stats_response.status_code == 200 else {}
+
+        # Получаем последние задачи тренировки
+        trainings_response = requests.get(f"{API_URL}/api/training/list")
+        recent_trainings = []
+
+        if trainings_response.status_code == 200:
+            result = trainings_response.json()
+            all_trainings = result.get("trainings", [])
+            # Берем последние 5 задач
+            recent_trainings = all_trainings[:5]
+
+        return render_template(
+            'admin/training.html',
+            stats=stats,
+            recent_trainings=recent_trainings
+        )
+
+    except Exception as e:
+        error = f"Ошибка при загрузке панели тренировок: {str(e)}"
+        return render_template('admin/training.html', error=error)
 
 @app.route('/admin/training/voice-model', methods=['GET', 'POST'])
 @admin_required
@@ -630,53 +682,161 @@ def training_status(task_id):
 @app.route('/admin/training/list')
 @admin_required
 def training_list():
+    """Отображение списка всех задач тренировки"""
     try:
+        # Получаем список всех задач тренировки
         response = requests.get(f"{API_URL}/api/training/list")
 
         if response.status_code == 200:
-            all_tasks = response.json()
+            result = response.json()
+            all_trainings = result.get("trainings", [])
 
-            # Разделение задач на активные и завершенные
-            active_trainings = [task for task in all_tasks if task.get('status') in ['preparing_data', 'training']]
-            completed_trainings = [task for task in all_tasks if
-                                   task.get('status') in ['completed', 'error', 'stopped']]
+            # Разделяем задачи по статусам
+            active_trainings = [
+                task for task in all_trainings
+                if task.get('status') in ['starting', 'preparing_data', 'training']
+            ]
+
+            completed_trainings = [
+                task for task in all_trainings
+                if task.get('status') in ['completed', 'error', 'cancelled']
+            ]
+
+            # Получаем статистику
+            stats_response = requests.get(f"{API_URL}/api/training/stats")
+            stats = stats_response.json() if stats_response.status_code == 200 else {}
 
             return render_template(
-                'admin/training_status.html',  # Используем training_status.html вместо training_list.html
+                'admin/training_list.html',
                 active_trainings=active_trainings,
-                completed_trainings=completed_trainings
+                completed_trainings=completed_trainings,
+                stats=stats
             )
         else:
-            error = f"Ошибка при получении списка задач тренировки: {response.json().get('detail')}"
-            return render_template('admin/training_status.html', error=error)
+            error_detail = response.json().get('detail', 'Unknown error') if response.content else 'No response'
+            error = f"Ошибка при получении списка задач тренировки: {error_detail}"
+            return render_template('admin/training_list.html', error=error)
+
+    except requests.exceptions.ConnectionError:
+        error = "Ошибка соединения с API-сервисом"
+        return render_template('admin/training_list.html', error=error)
     except Exception as e:
-        error = f"Ошибка соединения с API: {str(e)}"
-        return render_template('admin/training_status.html', error=error)
+        error = f"Неожиданная ошибка: {str(e)}"
+        return render_template('admin/training_list.html', error=error)
 
 
-@app.route('/admin/training/stop', methods=['POST'])
+@app.route('/admin/training/start', methods=['POST'])
 @admin_required
-def stop_training():
-    task_id = request.form.get('task_id')
-
-    if not task_id:
-        flash('ID задачи не указан', 'danger')
-        return redirect(url_for('training_list'))
-
+def start_training():
+    """Запуск новой задачи тренировки"""
     try:
-        # Отправляем запрос на API для остановки тренировки
+        model_type = request.form.get('model_type')
+        batch_size = int(request.form.get('batch_size', 32))
+        learning_rate = float(request.form.get('learning_rate', 0.001))
+        num_epochs = int(request.form.get('num_epochs', 50))
+
+        # Валидация параметров
+        if model_type not in ['voice_model', 'anti_spoof']:
+            flash('Неверный тип модели', 'danger')
+            return redirect(url_for('training_dashboard'))
+
+        # Подготовка данных для запроса
+        training_data = {
+            "model_type": model_type,
+            "batch_size": batch_size,
+            "learning_rate": learning_rate,
+            "num_epochs": num_epochs
+        }
+
+        # Отправка запроса на запуск тренировки
         response = requests.post(
-            f"{API_URL}/api/training/{task_id}/stop"
+            f"{API_URL}/api/training/start",
+            json=training_data
         )
 
         if response.status_code == 200:
-            flash('Задача тренировки успешно остановлена', 'success')
+            result = response.json()
+            task_id = result.get('task_id')
+            flash(f'Тренировка запущена успешно. ID задачи: {task_id}', 'success')
+            return redirect(url_for('training_status', task_id=task_id))
         else:
-            flash(f'Ошибка при остановке задачи: {response.json().get("detail")}', 'danger')
-    except Exception as e:
-        flash(f'Ошибка соединения с API: {str(e)}', 'danger')
+            error_detail = response.json().get('detail', 'Unknown error') if response.content else 'No response'
+            flash(f'Ошибка при запуске тренировки: {error_detail}', 'danger')
+            return redirect(url_for('training_dashboard'))
 
-    return redirect(url_for('training_list'))
+    except ValueError as e:
+        flash(f'Ошибка в параметрах тренировки: {str(e)}', 'danger')
+        return redirect(url_for('training_dashboard'))
+    except Exception as e:
+        flash(f'Ошибка при запуске тренировки: {str(e)}', 'danger')
+        return redirect(url_for('training_dashboard'))
+
+
+@app.route('/admin/training/<task_id>/stop', methods=['POST'])
+@admin_required
+def stop_training(task_id):
+    """Остановка/отмена задачи тренировки"""
+    try:
+        response = requests.post(f"{API_URL}/api/training/{task_id}/cancel", timeout=10)
+
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                flash('Тренировка остановлена успешно', 'success')
+            else:
+                flash(f'Не удалось остановить тренировку: {result.get("message")}', 'warning')
+        else:
+            flash('Ошибка при остановке тренировки', 'danger')
+
+    except requests.exceptions.ConnectionError:
+        flash('Ошибка соединения с API-сервисом', 'danger')
+    except requests.exceptions.Timeout:
+        flash('Время ожидания ответа истекло', 'danger')
+    except Exception as e:
+        flash(f'Ошибка при остановке тренировки: {str(e)}', 'danger')
+
+    # Перенаправляем обратно на страницу статуса или список
+    return redirect(url_for('training_status', task_id=task_id))
+
+
+@app.route('/admin/training/<task_id>/deploy', methods=['POST'])
+@admin_required
+def deploy_model(task_id):
+    """Развертывание обученной модели"""
+    try:
+        # Проверяем статус задачи
+        status_response = requests.get(f"{API_URL}/api/training/{task_id}/status", timeout=10)
+
+        if status_response.status_code != 200:
+            flash('Не удалось получить статус задачи', 'danger')
+            return redirect(url_for('training_status', task_id=task_id))
+
+        status_data = status_response.json()
+
+        if status_data.get('status') != 'completed':
+            flash('Модель можно развернуть только после успешного завершения тренировки', 'warning')
+            return redirect(url_for('training_status', task_id=task_id))
+
+        # Отправляем запрос на развертывание модели
+        deploy_response = requests.post(f"{API_URL}/api/training/{task_id}/deploy", timeout=30)
+
+        if deploy_response.status_code == 200:
+            result = deploy_response.json()
+            if result.get('success'):
+                flash('Модель успешно развернута и готова к использованию', 'success')
+            else:
+                flash(f'Ошибка при развертывании: {result.get("message")}', 'danger')
+        else:
+            flash('Ошибка при развертывании модели', 'danger')
+
+    except requests.exceptions.ConnectionError:
+        flash('Ошибка соединения с API-сервисом', 'danger')
+    except requests.exceptions.Timeout:
+        flash('Время ожидания развертывания истекло', 'danger')
+    except Exception as e:
+        flash(f'Ошибка при развертывании модели: {str(e)}', 'danger')
+
+    return redirect(url_for('training_status', task_id=task_id))
 # НОВЫЕ МАРШРУТЫ ДЛЯ УПРОЩЕННОГО ДОБАВЛЕНИЯ ПОЛЬЗОВАТЕЛЕЙ И ПЕРЕНОСА СИСТЕМЫ
 
 @app.route('/admin/users/simple_add', methods=['GET', 'POST'])

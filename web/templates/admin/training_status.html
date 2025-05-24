@@ -295,11 +295,13 @@
                                 <i class="bi bi-arrow-left"></i> Back
                             </a>
                             {% if status.status == 'completed' %}
-                            <a href="{{ url_for('deploy_model', task_id=status.task_id) }}" class="btn btn-success" onclick="return confirm('Are you sure you want to deploy this model?');">
-                                <i class="bi bi-cloud-upload"></i> Deploy Model
-                            </a>
+                                <form method="POST" action="{{ url_for('deploy_model', task_id=status.task_id) }}" style="display: inline-block;">
+                                    <button type="submit" class="btn btn-success" onclick="return confirm('Вы уверены, что хотите развернуть эту модель?');">
+                                        <i class="bi bi-cloud-upload"></i> Развернуть модель
+                                    </button>
+                                </form>
                             {% elif status.status != 'error' and status.status != 'completed' %}
-                            <form method="POST" action="{{ url_for('stop_training') }}" class="d-inline">
+                            <form method="POST" action="{{ url_for('stop_training', task_id=status.task_id) }}" class="d-inline">
                                 <input type="hidden" name="task_id" value="{{ status.task_id }}">
                                 <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to stop training?');">
                                     <i class="bi bi-x-circle"></i> Stop Training

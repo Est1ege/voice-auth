@@ -700,35 +700,167 @@ async def get_task_status(task_id: str):
         }
 
 
-@app.get("/training/list")
-async def list_training_tasks():
+@app.post("/training/{task_id}/cancel")
+async def cancel_training_task(task_id: str):
+    """
+    Отменяет активную задачу тренировки
+    """
     global training_manager
 
     if training_manager is None:
         raise HTTPException(status_code=500, detail="Training manager not initialized")
 
     try:
-        tasks = training_manager.get_all_tasks()
-        return tasks
+        success = training_manager.cancel_task(task_id)
+
+        if success:
+            return {
+                "success": True,
+                "message": f"Training task {task_id} cancelled successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Failed to cancel task {task_id}. Task may not exist or already completed."
+            }
+
     except Exception as e:
-        logger.error(f"Error listing training tasks: {e}")
+        logger.error(f"Error cancelling training task {task_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/training/cleanup")
-async def cleanup_training_tasks(max_age_days: int = 7):
+@app.get("/training/stats")
+async def get_training_statistics():
+    """
+    Возвращает статистику по тренировкам
+    """
     global training_manager
 
     if training_manager is None:
-        raise HTTPException(status_code=500, detail="Training manager not initialized")
+        return {
+            "active_tasks": 0,
+            "completed_tasks": 0,
+            "failed_tasks": 0,
+            "voice_model_tasks": 0,
+            "anti_spoof_tasks": 0
+        }
+
+    try:
+        all_tasks = training_manager.get_all_tasks()
+
+        stats = {
+            "total_tasks": len(all_tasks),
+            "active_tasks": len(
+                [t for t in all_tasks if t.get("status") in ["starting", "preparing_data", "training"]]),
+            "completed_tasks": len([t for t in all_tasks if t.get("status") == "completed"]),
+            "failed_tasks": len([t for t in all_tasks if t.get("status") in ["error", "cancelled"]]),
+            "voice_model_tasks": len([t for t in all_tasks if t.get("type") == "voice_model"]),
+            "anti_spoof_tasks": len([t for t in all_tasks if t.get("type") == "anti_spoof"])
+        }
+
+        return stats
+
+    except Exception as e:
+        logger.error(f"Error getting training statistics: {e}")
+        return {
+            "error": str(e)
+        }
+
+
+
+@app.get("/training/list")
+async def list_all_training_tasks():
+    """
+    Возвращает список всех задач тренировки (активных и завершенных)
+    """
+    global training_manager
+
+    if training_manager is None:
+        logger.error("Training manager not initialized")
+        return []
+
+    try:
+        all_tasks = training_manager.get_all_tasks()
+
+        # Добавляем дополнительную информацию для каждой задачи
+        for task in all_tasks:
+            # Форматируем времена для отображения
+            if task.get("start_time"):
+                try:
+                    start_dt = datetime.fromisoformat(task["start_time"])
+                    task["start_time_formatted"] = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    task["start_time_formatted"] = task["start_time"]
+
+            if task.get("end_time"):
+                try:
+                    end_dt = datetime.fromisoformat(task["end_time"])
+                    task["end_time_formatted"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+                    # Вычисляем длительность
+                    if task.get("start_time"):
+                        start_dt = datetime.fromisoformat(task["start_time"])
+                        duration = end_dt - start_dt
+                        task["duration"] = str(duration).split('.')[0]  # Убираем микросекунды
+                except:
+                    task["end_time_formatted"] = task["end_time"]
+
+            # Добавляем понятное описание статуса
+            status_descriptions = {
+                "starting": "Запуск",
+                "preparing_data": "Подготовка данных",
+                "training": "Обучение",
+                "completed": "Завершено",
+                "error": "Ошибка",
+                "cancelled": "Отменено"
+            }
+            task["status_description"] = status_descriptions.get(task.get("status"), task.get("status", "Неизвестно"))
+
+            # Добавляем описание типа модели
+            type_descriptions = {
+                "voice_model": "Модель распознавания голоса",
+                "anti_spoof": "Модель защиты от спуфинга"
+            }
+            task["type_description"] = type_descriptions.get(task.get("type"), task.get("type", "Неизвестно"))
+
+        logger.info(f"Returned {len(all_tasks)} training tasks")
+        return all_tasks
+
+    except Exception as e:
+        logger.error(f"Error listing training tasks: {e}")
+        return []
+
+
+@app.delete("/training/cleanup")
+async def cleanup_old_training_tasks(max_age_days: int = 7):
+    """
+    Очищает старые завершенные задачи тренировки
+    """
+    global training_manager
+
+    if training_manager is None:
+        return {
+            "success": False,
+            "message": "Training manager not initialized",
+            "removed_count": 0
+        }
 
     try:
         removed_count = training_manager.clean_completed_tasks(max_age_days)
-        return {"success": True, "removed_count": removed_count}
+
+        return {
+            "success": True,
+            "removed_count": removed_count,
+            "message": f"Removed {removed_count} old training tasks"
+        }
+
     except Exception as e:
         logger.error(f"Error cleaning up training tasks: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        return {
+            "success": False,
+            "message": str(e),
+            "removed_count": 0
+        }
 
 @app.post("/train_anti_spoofing")
 async def train_anti_spoofing(background_tasks: BackgroundTasks):
@@ -1212,13 +1344,11 @@ async def authenticate_by_path(request: dict):
             "message": str(e)
         }
 
-
 @app.get("/system/reinitialize/status")
 async def get_reinitialize_status():
     """Возвращает текущий статус переинициализации"""
     global reinitialization_status
     return reinitialization_status
-
 
 # Модифицируйте функцию переинициализации
 @app.post("/system/reinitialize")
@@ -1271,8 +1401,6 @@ def reinitialize_system():
             "error": str(e),
             "status": reinitialization_status
         }
-
-
 # Функция фонового выполнения
 async def perform_reinitialize():
     global reinitialization_status, adaptive_threshold, SPOOFING_THRESHOLD
@@ -1322,8 +1450,6 @@ async def perform_reinitialize():
         reinitialization_status["last_status"] = "error"
         reinitialization_status["error"] = str(e)
         reinitialization_status["end_time"] = datetime.now().isoformat()
-
-
 @app.post("/reset_embeddings")
 async def reset_embeddings():
     """Сброс всех эмбеддингов и повторная загрузка из файла"""

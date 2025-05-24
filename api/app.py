@@ -163,7 +163,7 @@ async def get_db():
 # В api/app.py
 
 async def call_ml_service(method, endpoint=None, json=None):
-    """Вызов методов ML-сервиса с полной обратной совместимостью"""
+    """Вызов методов ML-сервиса с полной поддержкой HTTP методов"""
     ml_service_url = os.environ.get("ML_SERVICE_URL", "http://ml_model:5000")
 
     # Определяем, используется старый или новый формат вызова
@@ -184,19 +184,19 @@ async def call_ml_service(method, endpoint=None, json=None):
         endpoint = endpoint if isinstance(endpoint, str) else "/extract_embedding"
         method = "POST"
     else:
-        # Новый формат: call_ml_service("POST", "/endpoint", data)
+        # Новый формат: call_ml_service("DELETE", "/endpoint", data)
         data_payload = json
 
     # Убедимся, что endpoint - это строка
     if not isinstance(endpoint, str):
-        # Если endpoint не строка, используем значение по умолчанию
         logger.warning(f"Endpoint должен быть строкой, получено: {type(endpoint)}")
-        endpoint = "/extract_embedding"  # Значение по умолчанию
+        endpoint = "/extract_embedding"
 
     # Убедимся, что endpoint начинается с "/"
     if not endpoint.startswith("/"):
         endpoint = f"/{endpoint}"
 
+    # Формируем полный URL
     url = f"{ml_service_url}{endpoint}"
 
     logger.info(f"Calling ML service: {method} {url}")
@@ -214,67 +214,75 @@ async def call_ml_service(method, endpoint=None, json=None):
             if os.path.exists(shared_path):
                 logger.info(f"Redirecting audio path from {original_path} to {shared_path}")
                 data_payload['audio_path'] = shared_path
-            else:
-                # Ищем по имени файла в общей директории
-                shared_dir = "/shared/temp"
-                if os.path.exists(shared_dir):
-                    for file in os.listdir(shared_dir):
-                        if file.endswith('.wav'):
-                            logger.info(f"Found potential match in shared directory: {file}")
-                            shared_path = f"{shared_dir}/{file}"
-                            logger.info(f"Using shared file instead: {shared_path}")
-                            data_payload['audio_path'] = shared_path
-                            break
-
-        # Проверяем и логируем существование файла перед отправкой запроса
-        if os.path.exists(data_payload['audio_path']):
-            logger.info(f"File confirmed to exist before ML call: {data_payload['audio_path']}")
-            logger.info(f"File size: {os.path.getsize(data_payload['audio_path'])} bytes")
-        else:
-            logger.warning(f"File does not exist before ML call: {data_payload['audio_path']}")
-
-            # Ищем файлы в shared/temp в качестве запасного варианта
-            shared_dir = "/shared/temp"
-            if os.path.exists(shared_dir):
-                temp_files = os.listdir(shared_dir)
-                if temp_files:
-                    # Используем первый доступный WAV файл
-                    for file in temp_files:
-                        if file.endswith('.wav'):
-                            replacement_path = f"{shared_dir}/{file}"
-                            logger.info(f"Using replacement file: {replacement_path}")
-                            data_payload['audio_path'] = replacement_path
-                            break
 
     async with httpx.AsyncClient() as client:
         try:
+            # ПОДДЕРЖКА ВСЕХ HTTP МЕТОДОВ
             if method.upper() == "GET":
                 response = await client.get(url, timeout=30.0)
             elif method.upper() == "POST":
                 response = await client.post(url, json=data_payload, timeout=30.0)
+            elif method.upper() == "PUT":
+                response = await client.put(url, json=data_payload, timeout=30.0)
+            elif method.upper() == "DELETE":
+                response = await client.delete(url, timeout=30.0)
+            elif method.upper() == "PATCH":
+                response = await client.patch(url, json=data_payload, timeout=30.0)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
 
             response.raise_for_status()
             return response.json()
+
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error calling ML service ({method} {url}): {e}")
+
+            # Специальная обработка для cleanup endpoint
+            if method.upper() == "DELETE" and "cleanup" in endpoint:
+                return {
+                    "success": False,
+                    "removed_count": 0,
+                    "message": f"HTTP error: {e.response.status_code}"
+                }
+
             raise HTTPException(status_code=e.response.status_code, detail=f"ML service error: {e}")
+
         except httpx.RequestError as e:
             logger.error(f"Request error calling ML service ({method} {url}): {e}")
+
+            # Специальная обработка для cleanup endpoint
+            if method.upper() == "DELETE" and "cleanup" in endpoint:
+                return {
+                    "success": False,
+                    "removed_count": 0,
+                    "message": f"Connection error: {e}"
+                }
+
             # Возвращаем заглушку для endpoint training status
             if "training" in endpoint and "status" in endpoint:
                 return {
-                    "task_id": endpoint.split("/")[-2],
+                    "task_id": endpoint.split("/")[-2] if "/" in endpoint else "unknown",
                     "status": "unknown",
                     "progress": 0,
                     "message": f"Cannot connect to ML service: {e}",
                     "type": None
                 }
+
             raise HTTPException(status_code=500, detail=f"Cannot connect to ML service: {e}")
+
         except Exception as e:
             logger.error(f"Unexpected error calling ML service ({method} {url}): {e}")
+
+            # Специальная обработка для cleanup endpoint
+            if method.upper() == "DELETE" and "cleanup" in endpoint:
+                return {
+                    "success": False,
+                    "removed_count": 0,
+                    "message": f"Unexpected error: {str(e)}"
+                }
+
             raise HTTPException(status_code=500, detail=f"Error communicating with ML service: {str(e)}")
+
 
 # Аудио сервис
 async def call_audio_processor(endpoint, data=None, file=None):
@@ -877,70 +885,169 @@ async def api_training_status(task_id: str):
             "type": None
         }
 
-@app.get("/api/training/list")
-async def get_training_list(db=Depends(get_db)):
+
+@app.delete("/api/training/cleanup")
+async def cleanup_training_tasks(max_age_days: int = 7):
+    """Очистка старых задач тренировки"""
     try:
-        # Получение списка тренировок из БД
-        training_tasks = await db.training_tasks.find().to_list(length=100)
-        
-        # Преобразование ObjectId в строки
-        for task in training_tasks:
-            task["_id"] = str(task["_id"])
-        
-        # Запрос актуального статуса у ML-сервиса для активных задач
-        for task in training_tasks:
-            if task.get("status") not in ["completed", "failed", "canceled"]:
-                try:
-                    status_response = await call_ml_service("GET", f"/training/{task['task_id']}/status")
-                    task["status"] = status_response.get("status", task.get("status"))
-                    task["progress"] = status_response.get("progress", task.get("progress", 0))
-                except Exception as e:
-                    logger.warning(f"Error getting task status from ML service: {e}")
-        
-        return {"trainings": training_tasks}
+        from fastapi import Query
+
+        logger.info(f"Starting cleanup of training tasks older than {max_age_days} days")
+
+        # Формируем URL с параметрами
+        cleanup_url = f"/training/cleanup?max_age_days={max_age_days}"
+
+        # Вызываем ML-сервис
+        response = await call_ml_service("DELETE", cleanup_url)
+
+        if response.get("success"):
+            removed_count = response.get("removed_count", 0)
+
+            # Логируем событие очистки
+            log_entry = LogEntry(
+                event_type="training_cleanup",
+                success=True,
+                details={
+                    "removed_count": removed_count,
+                    "max_age_days": max_age_days,
+                    "cleaned_at": datetime.now().isoformat()
+                }
+            )
+            await db.logs.insert_one(log_entry.dict(exclude={"id"}))
+
+            logger.info(f"Successfully cleaned {removed_count} training tasks")
+
+            return {
+                "success": True,
+                "removed_count": removed_count,
+                "message": f"Успешно удалено {removed_count} старых задач тренировки"
+            }
+        else:
+            error_msg = response.get("message", "Unknown error")
+            logger.error(f"ML service cleanup failed: {error_msg}")
+
+            return {
+                "success": False,
+                "removed_count": 0,
+                "message": f"Ошибка при очистке: {error_msg}"
+            }
+
+    except Exception as e:
+        logger.error(f"Error cleaning up training tasks: {e}")
+        return {
+            "success": False,
+            "removed_count": 0,
+            "message": f"Ошибка при очистке задач тренировки: {str(e)}"
+        }
+@app.get("/api/training/list")
+async def get_training_list():
+    """Получение списка всех задач тренировки"""
+    try:
+        # Запрашиваем список у ML-сервиса
+        response = await call_ml_service("GET", "/training/list")
+
+        if isinstance(response, list):
+            return {"trainings": response, "success": True}
+        else:
+            logger.error(f"Unexpected response format from ML service: {type(response)}")
+            return {"trainings": [], "success": False, "error": "Invalid response format"}
+
     except Exception as e:
         logger.error(f"Error getting training list: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"trainings": [], "success": False, "error": str(e)}
+
+
+@app.post("/api/training/{task_id}/deploy")
+async def deploy_trained_model(task_id: str):
+    """Развертывание обученной модели"""
+    try:
+        # Получаем информацию о задаче
+        response = await call_ml_service("GET", f"/training/{task_id}/status")
+
+        if response.get("status") != "completed":
+            return {
+                "success": False,
+                "message": "Модель можно развернуть только после успешного завершения тренировки"
+            }
+
+        model_type = response.get("type")
+
+        # Отправляем запрос на развертывание в ML-сервис
+        deploy_response = await call_ml_service("POST", f"/training/{task_id}/deploy")
+
+        if deploy_response.get("success"):
+            # Логируем событие развертывания
+            log_entry = LogEntry(
+                event_type="model_deployed",
+                success=True,
+                details={
+                    "task_id": task_id,
+                    "model_type": model_type,
+                    "deployed_at": datetime.now().isoformat()
+                }
+            )
+            await db.logs.insert_one(log_entry.dict(exclude={"id"}))
+
+            return {
+                "success": True,
+                "message": f"Модель {model_type} успешно развернута"
+            }
+        else:
+            return {
+                "success": False,
+                "message": deploy_response.get("message", "Ошибка при развертывании модели")
+            }
+
+    except Exception as e:
+        logger.error(f"Error deploying model {task_id}: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка при развертывании: {str(e)}"
+        }
+@app.get("/api/training/stats")
+async def get_training_stats():
+    """Получение статистики по тренировкам"""
+    try:
+        response = await call_ml_service("GET", "/training/stats")
+        return response
+    except Exception as e:
+        logger.error(f"Error getting training stats: {e}")
+        return {
+            "total_tasks": 0,
+            "active_tasks": 0,
+            "completed_tasks": 0,
+            "failed_tasks": 0,
+            "voice_model_tasks": 0,
+            "anti_spoof_tasks": 0,
+            "error": str(e)
+        }
 
 
 @app.post("/api/training/{task_id}/cancel")
-async def cancel_training(task_id: str, db=Depends(get_db)):
-    """
-    Отмена запущенной тренировки модели.
-    """
+async def cancel_training_task(task_id: str):
+    """Отмена задачи тренировки"""
     try:
-        # Отправляем запрос на отмену тренировки к ML-сервису
         response = await call_ml_service("POST", f"/training/{task_id}/cancel")
-        
-        # Логируем событие отмены тренировки
+
+        # Логируем событие отмены
         log_entry = LogEntry(
             event_type="training_cancelled",
-            success=True,
+            success=response.get("success", False),
             details={
                 "task_id": task_id,
                 "cancelled_at": datetime.now().isoformat()
             }
         )
         await db.logs.insert_one(log_entry.dict(exclude={"id"}))
-        
-        # Обновляем статус тренировки в базе данных
-        await db.training_tasks.update_one(
-            {"task_id": task_id},
-            {"$set": {"status": "cancelled", "updated_at": datetime.now().isoformat()}}
-        )
-        
-        return {
-            "success": True,
-            "message": "Тренировка отменена",
-            "task_id": task_id
-        }
-    except Exception as e:
-        logger.error(f"Error cancelling training: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка при отмене тренировки: {str(e)}"
-        )
 
+        return response
+
+    except Exception as e:
+        logger.error(f"Error cancelling training task {task_id}: {e}")
+        return {
+            "success": False,
+            "message": f"Error cancelling training: {str(e)}"
+        }
 # Эндпоинты для экспорта/импорта системы
 @app.post("/api/system/import")
 async def import_system(
@@ -2123,8 +2230,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-
-
 # Исправление: Функция должна быть объявлена как async
 async def format_auth_event(event):
     """Форматирование события аутентификации для отправки через WebSocket"""

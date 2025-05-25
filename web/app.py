@@ -8,9 +8,13 @@ import uuid
 import tempfile
 import zipfile
 import shutil
+import psutil
+import time
+from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import docker
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_key_123')
@@ -88,117 +92,119 @@ def logout():
     return redirect(url_for('login'))
 
 
+# Замените функцию admin_dashboard в web/app.py
+
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
     """Главная страница администратора с актуальными данными"""
-    try:
-        # 1. Получаем системный статус
-        status_response = requests.get(f"{API_URL}/api/system/status", timeout=10)
-        system_status = {}
-        if status_response.status_code == 200:
-            system_status = status_response.json()
-
-        # 2. Получаем список пользователей
-        users_response = requests.get(f"{API_URL}/api/users", timeout=10)
-        users_data = {}
-        if users_response.status_code == 200:
-            users_data = users_response.json()
-
-        # 3. Получаем логи для статистики
-        logs_response = requests.get(f"{API_URL}/api/logs", params={"limit": 100}, timeout=10)
-        logs_data = {}
-        if logs_response.status_code == 200:
-            logs_data = logs_response.json()
-
-        # 4. Обрабатываем данные для dashboard
-        dashboard_data = process_dashboard_data(system_status, users_data, logs_data)
-
-        return render_template('admin/dashboard.html',
-                               username=session['username'],
-                               **dashboard_data)
-
-    except Exception as e:
-        app.logger.error(f"Error loading dashboard data: {e}")
-        # Возвращаем пустые данные в случае ошибки
-        return render_template('admin/dashboard.html',
-                               username=session['username'],
-                               total_users=0,
-                               active_users=0,
-                               entries_today=0,
-                               spoofing_attempts=0,
-                               recent_events=[])
-
-
-def process_dashboard_data(system_status, users_data, logs_data):
-    """Обрабатывает данные для dashboard"""
-    # Инициализация с безопасными значениями по умолчанию
-    data = {
+    dashboard_data = {
         'total_users': 0,
         'active_users': 0,
         'entries_today': 0,
         'spoofing_attempts': 0,
-        'recent_events': []
+        'recent_events': [],
+        'connection_error': False
     }
 
-    # Обработка данных пользователей
-    if system_status:
-        data['total_users'] = system_status.get('users_count', 0)
-        data['active_users'] = system_status.get('active_users_count', 0)
+    try:
+        app.logger.info("Loading dashboard data...")
 
-    # Обработка логов
-    logs = logs_data.get('logs', []) if logs_data else []
-
-    # Подсчет событий за сегодня
-    today = datetime.date.today()
-    entries_today = 0
-    spoofing_attempts = 0
-
-    for log in logs:
+        # 1. Получаем системный статус для данных о пользователях
         try:
-            # Парсим дату из лога
-            log_date_str = log.get('timestamp', '')
-            if isinstance(log_date_str, str):
-                # Пробуем разные форматы даты
-                log_date = None
-                for fmt in ['%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S']:
+            status_response = requests.get(f"{API_URL}/api/system/status", timeout=10)
+            if status_response.status_code == 200:
+                system_status = status_response.json()
+                dashboard_data['total_users'] = system_status.get('users_count', 0)
+                dashboard_data['active_users'] = system_status.get('active_users_count', 0)
+
+                # Используем статистику за сегодня, если она есть
+                today_stats = system_status.get('today_stats', {})
+                dashboard_data['entries_today'] = today_stats.get('successful_auths', 0)
+                dashboard_data['spoofing_attempts'] = today_stats.get('spoofing_attempts', 0)
+
+                app.logger.info(
+                    f"System status: users={dashboard_data['total_users']}, active={dashboard_data['active_users']}")
+            else:
+                app.logger.warning(f"System status API returned: {status_response.status_code}")
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Error getting system status: {e}")
+            dashboard_data['connection_error'] = True
+
+        # 2. Получаем логи для Recent Events
+        try:
+            logs_response = requests.get(f"{API_URL}/api/logs", params={"limit": 10}, timeout=10)
+            if logs_response.status_code == 200:
+                logs_data = logs_response.json()
+                logs = logs_data.get('logs', [])
+
+                app.logger.info(f"Retrieved {len(logs)} log entries")
+
+                # Обрабатываем логи для отображения
+                recent_events = []
+                for log in logs:
                     try:
-                        log_date = datetime.datetime.strptime(log_date_str.split('Z')[0], fmt).date()
-                        break
-                    except:
+                        event = {
+                            'timestamp': format_timestamp(log.get('timestamp', '')),
+                            'type': get_event_display_name(log.get('event_type', '')),
+                            'user': log.get('user_name', 'Unknown'),
+                            'status': 'Success' if log.get('success', False) else 'Failed'
+                        }
+                        recent_events.append(event)
+                    except Exception as e:
+                        app.logger.warning(f"Error processing log entry: {e}")
                         continue
 
-                if log_date == today:
-                    event_type = log.get('event_type', '')
-                    if event_type == 'authorization_successful':
-                        entries_today += 1
-                    elif event_type == 'spoofing_attempt':
-                        spoofing_attempts += 1
-        except Exception as e:
-            app.logger.warning(f"Error processing log date: {e}")
-            continue
+                dashboard_data['recent_events'] = recent_events
+                app.logger.info(f"Processed {len(recent_events)} events for display")
+            else:
+                app.logger.warning(f"Logs API returned: {logs_response.status_code}")
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Error getting logs: {e}")
 
-    data['entries_today'] = entries_today
-    data['spoofing_attempts'] = spoofing_attempts
+        # 3. Если данные о событиях за сегодня не получены из системного статуса,
+        # подсчитываем их из логов
+        if dashboard_data['entries_today'] == 0 and dashboard_data['spoofing_attempts'] == 0:
+            try:
+                from datetime import date
+                today = date.today()
 
-    # Обработка последних событий (берем первые 10)
-    recent_events = []
-    for log in logs[:10]:
-        try:
-            event = {
-                'timestamp': format_timestamp(log.get('timestamp', '')),
-                'type': get_event_display_name(log.get('event_type', '')),
-                'user': log.get('user_name', 'Unknown'),
-                'status': 'Success' if log.get('success', False) else 'Failed'
-            }
-            recent_events.append(event)
-        except Exception as e:
-            app.logger.warning(f"Error processing event: {e}")
-            continue
+                for log in logs_data.get('logs', []) if 'logs_data' in locals() else []:
+                    try:
+                        log_date_str = log.get('timestamp', '')
+                        if log_date_str:
+                            # Извлекаем дату из timestamp
+                            log_date = None
+                            for fmt in ['%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S']:
+                                try:
+                                    log_date = datetime.strptime(log_date_str.split('Z')[0], fmt).date()
+                                    break
+                                except:
+                                    continue
 
-    data['recent_events'] = recent_events
+                            if log_date == today:
+                                event_type = log.get('event_type', '')
+                                if event_type == 'authorization_successful':
+                                    dashboard_data['entries_today'] += 1
+                                elif event_type == 'spoofing_attempt':
+                                    dashboard_data['spoofing_attempts'] += 1
+                    except Exception as e:
+                        continue
 
-    return data
+                app.logger.info(
+                    f"Calculated from logs: entries_today={dashboard_data['entries_today']}, spoofing_attempts={dashboard_data['spoofing_attempts']}")
+            except Exception as e:
+                app.logger.warning(f"Error calculating today's stats from logs: {e}")
+
+        app.logger.info(f"Final dashboard data: {dashboard_data}")
+
+    except Exception as e:
+        app.logger.error(f"Unexpected error loading dashboard: {e}")
+        dashboard_data['connection_error'] = True
+
+    return render_template('admin/dashboard.html',
+                           username=session['username'],
+                           **dashboard_data)
 
 
 def format_timestamp(timestamp_str):
@@ -210,11 +216,12 @@ def format_timestamp(timestamp_str):
         # Пробуем разные форматы
         for fmt in ['%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S']:
             try:
-                dt = datetime.datetime.strptime(timestamp_str.split('Z')[0], fmt)
+                dt = datetime.strptime(timestamp_str.split('Z')[0], fmt)
                 return dt.strftime('%Y-%m-%d %H:%M:%S')
             except:
                 continue
-        return timestamp_str
+        # Если не получилось распарсить, возвращаем как есть
+        return timestamp_str[:19].replace('T', ' ')
     except Exception:
         return timestamp_str
 
@@ -229,7 +236,8 @@ def get_event_display_name(event_type):
         'user_activated': 'User Activated',
         'user_deleted': 'User Deleted',
         'training_started': 'Training Started',
-        'model_deployed': 'Model Deployed'
+        'model_deployed': 'Model Deployed',
+        'voice_sample_added': 'Voice Sample Added'
     }
     return event_names.get(event_type, event_type.replace('_', ' ').title())
 
@@ -481,7 +489,6 @@ def system_status():
 
     return render_template('admin/system.html', status=status, show_transfer_link=True)
 
-
 def enhance_system_status(base_status):
     """Дополняет базовый статус системы дополнительной информацией"""
     try:
@@ -504,7 +511,6 @@ def enhance_system_status(base_status):
         app.logger.warning(f"Error enhancing system status: {e}")
 
     return base_status
-
 
 def get_storage_usage():
     """Получает реальную информацию об использовании хранилища"""
@@ -552,7 +558,6 @@ def get_storage_usage():
 
     return storage
 
-
 def get_directory_size(path):
     """Вычисляет размер директории в байтах"""
     total_size = 0
@@ -568,7 +573,6 @@ def get_directory_size(path):
         pass
     return total_size
 
-
 def format_bytes(bytes_value):
     """Форматирует размер в байтах в читаемый формат"""
     if bytes_value == 0:
@@ -582,72 +586,395 @@ def format_bytes(bytes_value):
 
     return f"{bytes_value:.1f} {sizes[i]}"
 
-
 def get_docker_containers_info():
-    """Получает информацию о Docker контейнерах (заглушка)"""
-    # В реальной реализации здесь бы был запрос к Docker API
-    # Пока возвращаем заглушку с базовой информацией
-    containers = [
-        {
-            'name': 'voice-auth-api',
-            'status': 'Running',
-            'cpu': '2.5%',
-            'memory': '128 MB',
-            'network': '1.2 KB/s',
-            'uptime': '2d 14h'
-        },
-        {
-            'name': 'voice-auth-ml',
-            'status': 'Running',
-            'cpu': '15.3%',
-            'memory': '512 MB',
-            'network': '5.7 KB/s',
-            'uptime': '2d 14h'
-        },
-        {
-            'name': 'voice-auth-db',
-            'status': 'Running',
-            'cpu': '1.1%',
-            'memory': '64 MB',
-            'network': '0.8 KB/s',
-            'uptime': '2d 14h'
-        },
-        {
-            'name': 'voice-auth-web',
-            'status': 'Running',
-            'cpu': '0.8%',
-            'memory': '32 MB',
-            'network': '2.1 KB/s',
-            'uptime': '2d 14h'
-        }
-    ]
+    """Получает реальную информацию о Docker контейнерах"""
+    containers = []
+
+    try:
+        # Подключение к Docker API
+        client = docker.from_env()
+
+        # Получаем все контейнеры проекта (по префиксу имени или label)
+        project_containers = client.containers.list(all=True)
+
+        # Фильтруем контейнеры нашего проекта
+        voice_auth_containers = [
+            container for container in project_containers
+            if
+            any(keyword in container.name.lower() for keyword in ['voice', 'auth', 'api', 'ml', 'web', 'db', 'mongo'])
+        ]
+
+        for container in voice_auth_containers:
+            try:
+                # Получаем базовую информацию
+                container_info = {
+                    'name': container.name,
+                    'status': container.status.title(),
+                    'cpu': '0%',
+                    'memory': '0 MB',
+                    'network': '0 KB/s',
+                    'uptime': 'Unknown'
+                }
+
+                # Если контейнер запущен, получаем детальную статистику
+                if container.status == 'running':
+                    # Получаем статистику использования ресурсов
+                    stats = container.stats(stream=False)
+
+                    # CPU использование
+                    cpu_percent = calculate_cpu_percent(stats)
+                    container_info['cpu'] = f"{cpu_percent:.1f}%"
+
+                    # Память
+                    memory_usage = stats['memory_stats'].get('usage', 0)
+                    memory_limit = stats['memory_stats'].get('limit', 0)
+
+                    if memory_usage > 0:
+                        memory_mb = memory_usage / (1024 * 1024)
+                        container_info['memory'] = f"{memory_mb:.0f} MB"
+
+                    # Сетевой трафик
+                    network_io = calculate_network_io(stats)
+                    container_info['network'] = network_io
+
+                    # Время работы
+                    uptime = calculate_uptime(container)
+                    container_info['uptime'] = uptime
+
+                containers.append(container_info)
+
+            except Exception as e:
+                # Если не удалось получить статистику для конкретного контейнера
+                containers.append({
+                    'name': container.name,
+                    'status': container.status.title(),
+                    'cpu': 'N/A',
+                    'memory': 'N/A',
+                    'network': 'N/A',
+                    'uptime': 'N/A'
+                })
+                print(f"Warning: Could not get stats for container {container.name}: {e}")
+
+    except docker.errors.DockerException as e:
+        print(f"Docker API error: {e}")
+        # Возвращаем пустой список, если Docker недоступен
+        return []
+    except Exception as e:
+        print(f"Error getting Docker containers info: {e}")
+        return []
+
     return containers
 
+def calculate_cpu_percent(stats):
+    """Вычисляет процент использования CPU контейнером"""
+    try:
+        # Docker CPU статистика
+        cpu_stats = stats.get('cpu_stats', {})
+        precpu_stats = stats.get('precpu_stats', {})
 
-def get_default_status():
-    """Возвращает статус по умолчанию в случае ошибки"""
+        cpu_usage = cpu_stats.get('cpu_usage', {})
+        precpu_usage = precpu_stats.get('cpu_usage', {})
+
+        cpu_total = cpu_usage.get('total_usage', 0)
+        precpu_total = precpu_usage.get('total_usage', 0)
+
+        cpu_system = cpu_stats.get('system_cpu_usage', 0)
+        precpu_system = precpu_stats.get('system_cpu_usage', 0)
+
+        cpu_num = len(cpu_usage.get('percpu_usage', []))
+        if cpu_num == 0:
+            cpu_num = psutil.cpu_count()
+
+        cpu_delta = cpu_total - precpu_total
+        system_delta = cpu_system - precpu_system
+
+        if system_delta > 0 and cpu_delta > 0:
+            cpu_percent = (cpu_delta / system_delta) * cpu_num * 100.0
+            return cpu_percent
+
+    except Exception as e:
+        print(f"Error calculating CPU percent: {e}")
+
+    return 0.0
+
+def calculate_network_io(stats):
+    """Вычисляет сетевой I/O"""
+    try:
+        networks = stats.get('networks', {})
+        if not networks:
+            return '0 KB/s'
+
+        total_rx = 0
+        total_tx = 0
+
+        for interface, data in networks.items():
+            total_rx += data.get('rx_bytes', 0)
+            total_tx += data.get('tx_bytes', 0)
+
+        # Возвращаем суммарный трафик в KB/s (упрощенно)
+        total_bytes = total_rx + total_tx
+        if total_bytes < 1024:
+            return f"{total_bytes} B/s"
+        elif total_bytes < 1024 * 1024:
+            return f"{total_bytes / 1024:.1f} KB/s"
+        else:
+            return f"{total_bytes / (1024 * 1024):.1f} MB/s"
+
+    except Exception as e:
+        print(f"Error calculating network I/O: {e}")
+        return '0 KB/s'
+
+def calculate_uptime(container):
+    """Вычисляет время работы контейнера"""
+    try:
+        # Получаем время запуска из атрибутов контейнера
+        container.reload()  # Обновляем информацию о контейнере
+
+        started_at = container.attrs['State']['StartedAt']
+
+        # Парсим время запуска
+        # Формат: "2024-01-15T10:30:45.123456789Z"
+        started_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+
+        # Убираем timezone info для упрощения вычислений
+        started_time = started_time.replace(tzinfo=None)
+        now = datetime.utcnow()
+
+        uptime_delta = now - started_time
+
+        # Форматируем время работы
+        days = uptime_delta.days
+        hours, remainder = divmod(uptime_delta.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+
+        if days > 0:
+            return f"{days}d {hours}h"
+        elif hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
+
+    except Exception as e:
+        print(f"Error calculating uptime: {e}")
+        return 'Unknown'
+
+def get_real_system_status():
+    """Получает реальный системный статус без заглушек"""
+    try:
+        # Базовая информация о системе
+        status = {
+            'api_status': 'unknown',
+            'ml_status': 'unknown',
+            'db_status': 'unknown',
+            'users_count': 0,
+            'active_users_count': 0,
+            'device': get_device_info(),
+            'api_version': '1.0.0',
+            'storage': get_real_storage_usage(),
+            'containers': get_docker_containers_info(),
+            'backups': get_backup_status(),
+            'backup_schedule': get_backup_schedule(),
+            'system_resources': get_detailed_system_resources(),
+            'timestamp': datetime.now().isoformat()
+        }
+
+        return status
+
+    except Exception as e:
+        print(f"Error getting real system status: {e}")
+        return get_fallback_status()
+
+def get_device_info():
+    """Получает информацию об устройстве"""
+    try:
+        # Проверяем наличие GPU
+        try:
+            import torch
+            if torch.cuda.is_available():
+                gpu_name = torch.cuda.get_device_name(0)
+                gpu_count = torch.cuda.device_count()
+                return f"GPU: {gpu_name} ({gpu_count} device{'s' if gpu_count > 1 else ''})"
+        except ImportError:
+            pass
+
+        # Если GPU недоступно, возвращаем информацию о CPU
+        cpu_info = f"CPU: {psutil.cpu_count()} cores"
+        return cpu_info
+
+    except Exception as e:
+        print(f"Error getting device info: {e}")
+        return "Unknown"
+
+def get_real_storage_usage():
+    """Получает реальное использование хранилища"""
+    try:
+        storage = {}
+
+        # Общее использование диска
+        total, used, free = psutil.disk_usage('/')
+
+        # Использование директории аудио файлов
+        audio_path = '/shared/audio'
+        if os.path.exists(audio_path):
+            audio_size = get_directory_size(audio_path)
+            storage['audio_used'] = format_bytes(audio_size)
+            storage['audio_percent'] = min(100, int((audio_size / total) * 100))
+        else:
+            storage['audio_used'] = '0 B'
+            storage['audio_percent'] = 0
+
+        # Использование моделей ML
+        models_path = '/shared/models'
+        if os.path.exists(models_path):
+            models_size = get_directory_size(models_path)
+            storage['ml_used'] = format_bytes(models_size)
+            storage['ml_percent'] = min(100, int((models_size / total) * 100))
+        else:
+            storage['ml_used'] = '0 B'
+            storage['ml_percent'] = 0
+
+        # Общее использование диска
+        storage['total_used'] = format_bytes(used)
+        storage['total_free'] = format_bytes(free)
+        storage['total_size'] = format_bytes(total)
+        storage['total_percent'] = int((used / total) * 100)
+
+        return storage
+
+    except Exception as e:
+        print(f"Error getting storage usage: {e}")
+        return {
+            'audio_used': '0 B',
+            'audio_percent': 0,
+            'ml_used': '0 B',
+            'ml_percent': 0,
+            'total_used': '0 B',
+            'total_free': '0 B',
+            'total_size': '0 B',
+            'total_percent': 0
+        }
+
+def get_backup_status():
+    """Получает реальный статус бэкапов"""
+    backups = []
+    backup_dir = '/shared/backups'
+
+    try:
+        if os.path.exists(backup_dir):
+            backup_files = [f for f in os.listdir(backup_dir) if f.endswith('.zip')]
+
+            for backup_file in sorted(backup_files, reverse=True)[:10]:  # Последние 10
+                file_path = os.path.join(backup_dir, backup_file)
+                stat = os.stat(file_path)
+
+                backup_info = {
+                    'id': backup_file,
+                    'date': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M'),
+                    'type': 'Full' if 'full' in backup_file.lower() else 'Incremental',
+                    'size': format_bytes(stat.st_size),
+                    'status': 'Success'
+                }
+                backups.append(backup_info)
+
+    except Exception as e:
+        print(f"Error getting backup status: {e}")
+
+    return backups
+
+def get_backup_schedule():
+    """Получает расписание бэкапов"""
+    try:
+        # Проверяем наличие конфигурационного файла
+        config_file = '/shared/config/backup_schedule.json'
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                return config.get('schedule', 'Not configured')
+        else:
+            return 'Daily at 02:00 (default)'
+    except Exception as e:
+        print(f"Error getting backup schedule: {e}")
+        return 'Not configured'
+
+def get_detailed_system_resources():
+    """Получает детальную информацию о системных ресурсах"""
+    try:
+        # CPU информация
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count = psutil.cpu_count()
+        cpu_freq = psutil.cpu_freq()
+
+        # Память
+        memory = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+
+        # Диск I/O
+        disk_io = psutil.disk_io_counters()
+
+        # Сеть I/O
+        net_io = psutil.net_io_counters()
+
+        # Процессы
+        process_count = len(psutil.pids())
+
+        return {
+            'cpu': {
+                'percent': cpu_percent,
+                'count': cpu_count,
+                'frequency': f"{cpu_freq.current:.0f} MHz" if cpu_freq else "Unknown"
+            },
+            'memory': {
+                'total': format_bytes(memory.total),
+                'used': format_bytes(memory.used),
+                'free': format_bytes(memory.available),
+                'percent': memory.percent
+            },
+            'swap': {
+                'total': format_bytes(swap.total),
+                'used': format_bytes(swap.used),
+                'free': format_bytes(swap.free),
+                'percent': swap.percent
+            },
+            'disk_io': {
+                'read_bytes': format_bytes(disk_io.read_bytes) if disk_io else "0 B",
+                'write_bytes': format_bytes(disk_io.write_bytes) if disk_io else "0 B"
+            },
+            'network_io': {
+                'bytes_sent': format_bytes(net_io.bytes_sent),
+                'bytes_recv': format_bytes(net_io.bytes_recv)
+            },
+            'processes': process_count
+        }
+
+    except Exception as e:
+        print(f"Error getting detailed system resources: {e}")
+        return {}
+
+def get_fallback_status():
+    """Возвращает базовый статус при ошибках"""
     return {
-        'api_status': 'unknown',
+        'api_status': 'error',
         'ml_status': 'unknown',
         'db_status': 'unknown',
         'users_count': 0,
         'active_users_count': 0,
         'device': 'Unknown',
-        'api_version': 'Unknown',
+        'api_version': '1.0.0',
         'storage': {
-            'audio_used': '0 MB',
-            'audio_total': '1 GB',
+            'audio_used': '0 B',
             'audio_percent': 0,
-            'db_used': '0 MB',
-            'db_total': '1 GB',
-            'db_percent': 0,
-            'ml_used': '0 MB',
-            'ml_total': '1 GB',
-            'ml_percent': 0
+            'ml_used': '0 B',
+            'ml_percent': 0,
+            'total_used': '0 B',
+            'total_free': '0 B',
+            'total_size': '0 B',
+            'total_percent': 0
         },
         'containers': [],
         'backups': [],
-        'backup_schedule': 'Not configured'
+        'backup_schedule': 'Not configured',
+        'error': True,
+        'timestamp': datetime.now().isoformat()
     }
 
 @app.route('/admin/auth-monitor')

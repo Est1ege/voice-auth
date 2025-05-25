@@ -21,6 +21,7 @@ services:
     volumes:
       - ./web:/app
       - ./shared:/shared
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - FLASK_APP=app.py
       - FLASK_DEBUG=0
@@ -35,6 +36,7 @@ services:
     networks:
       - frontend
       - backend
+    user: "root"
 
   api:
     build:
@@ -43,6 +45,7 @@ services:
     volumes:
       - ./api:/app
       - ./shared:/shared
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - MODEL_PATH=/shared/models
       - DATABASE_URL=mongodb://mongo:password123@db:27017/voice_auth
@@ -61,6 +64,7 @@ services:
       - ml_model
     networks:
       - backend
+    user: "root"
 
   ml_model:
     build:

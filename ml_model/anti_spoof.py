@@ -1,4 +1,4 @@
-# ml_model/anti_spoof.py - Исправленная версия с улучшенной архитектурой
+# ml_model/anti_spoof.py - Исправленная версия по аналогии с voice_embedding.py
 
 import os
 import librosa
@@ -8,6 +8,7 @@ import numpy as np
 import logging
 import torch.nn.functional as F
 from pathlib import Path
+import json
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,15 +17,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("anti_spoofing")
 
-SPOOFING_THRESHOLD = 0.5  # Понижен для уменьшения ложных срабатываний
+SPOOFING_THRESHOLD = 0.5
 MIN_CONFIDENCE = 0.3
-DEFAULT_SCORE = 0.2  # Понижен для реального голоса по умолчанию
+DEFAULT_SCORE = 0.2
 
 
 class ImprovedAntiSpoofingNet(nn.Module):
     """
     Улучшенная модель для обнаружения спуфинг-атак
-    Использует комбинацию CNN и LSTM для анализа временных и частотных характеристик
     """
 
     def __init__(self, input_dim=40, hidden_dim=128, num_layers=2, dropout=0.3):
@@ -50,12 +50,12 @@ class ImprovedAntiSpoofingNet(nn.Module):
             nn.Conv2d(64, 128, kernel_size=(3, 3), padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((10, 8)),  # Адаптивный пулинг для стандартизации размера
+            nn.AdaptiveAvgPool2d((10, 8)),
             nn.Dropout2d(0.3)
         )
 
         # Вычисляем размер после CNN
-        cnn_output_size = 128 * 10 * 8  # 128 каналов, 10x8 после AdaptiveAvgPool2d
+        cnn_output_size = 128 * 10 * 8
 
         # LSTM для временного анализа
         self.lstm = nn.LSTM(
@@ -69,7 +69,7 @@ class ImprovedAntiSpoofingNet(nn.Module):
 
         # Полносвязные слои
         self.classifier = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),  # *2 из-за bidirectional
+            nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, 64),
@@ -79,11 +79,10 @@ class ImprovedAntiSpoofingNet(nn.Module):
             nn.Sigmoid()
         )
 
-        # Инициализация весов
         self._initialize_weights()
 
     def _initialize_weights(self):
-        """Улучшенная инициализация весов"""
+        """Инициализация весов"""
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -103,14 +102,14 @@ class ImprovedAntiSpoofingNet(nn.Module):
                         nn.init.constant_(param, 0)
 
     def forward(self, x):
-        """
-        Forward pass
-        Args:
-            x: Input tensor [batch_size, 1, time, freq] (спектрограмма)
-        Returns:
-            Tensor: Probability of spoofing [batch_size, 1]
-        """
+        """Forward pass"""
         batch_size = x.size(0)
+
+        # Убеждаемся что входные данные имеют правильную размерность
+        if x.dim() == 3:  # [batch_size, time, freq]
+            x = x.unsqueeze(1)  # -> [batch_size, 1, time, freq]
+        elif x.dim() == 2:  # [time, freq]
+            x = x.unsqueeze(0).unsqueeze(0)  # -> [1, 1, time, freq]
 
         # CNN feature extraction
         conv_out = self.conv_layers(x)  # [batch_size, 128, 10, 8]
@@ -130,25 +129,104 @@ class ImprovedAntiSpoofingNet(nn.Module):
         return output.squeeze()
 
 
+class RawNet2AntiSpoofing(nn.Module):
+    """
+    Упрощенная реализация RawNet2 для защиты от спуфинга
+    """
+
+    def __init__(self, d_args=None):
+        super(RawNet2AntiSpoofing, self).__init__()
+
+        # Параметры модели
+        self.sinc_out_channels = 128
+        self.filter_length = 251
+
+        # SincNet слой (упрощенная версия)
+        self.sinc_conv = nn.Conv1d(
+            in_channels=1,
+            out_channels=self.sinc_out_channels,
+            kernel_size=self.filter_length,
+            stride=1,
+            padding=self.filter_length // 2,
+            bias=False
+        )
+
+        # Residual blocks
+        self.res_blocks = nn.ModuleList([
+            self._make_res_block(self.sinc_out_channels, 128),
+            self._make_res_block(128, 256),
+            self._make_res_block(256, 512),
+        ])
+
+        # Global Average Pooling
+        self.gap = nn.AdaptiveAvgPool1d(1)
+
+        # Classifier
+        self.classifier = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+
+    def _make_res_block(self, in_channels, out_channels):
+        """Создает residual block"""
+        return nn.Sequential(
+            nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm1d(out_channels),
+            nn.ReLU(),
+            nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm1d(out_channels),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
+        )
+
+    def forward(self, x):
+        """Forward pass для RawNet2"""
+        # Обеспечиваем правильную размерность
+        if x.dim() == 2:  # [batch_size, samples]
+            x = x.unsqueeze(1)  # -> [batch_size, 1, samples]
+        elif x.dim() == 1:  # [samples]
+            x = x.unsqueeze(0).unsqueeze(0)  # -> [1, 1, samples]
+
+        # SincNet convolution
+        x = self.sinc_conv(x)
+
+        # Residual blocks
+        for res_block in self.res_blocks:
+            x = res_block(x)
+
+        # Global Average Pooling
+        x = self.gap(x)  # [batch_size, channels, 1]
+        x = x.squeeze(-1)  # [batch_size, channels]
+
+        # Classification
+        output = self.classifier(x)
+
+        return output.squeeze()
+
+
 class AntiSpoofingDetector:
     """
-    Улучшенный класс для обнаружения спуфинг-атак
+    Класс для обнаружения спуфинг-атак по аналогии с VoiceEmbeddingModel
     """
 
     def __init__(self, model_path=None, device=None):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Инициализируем устройство
+        self.device = self._initialize_device(device)
+        logger.info(f"Using device: {self.device}")
 
-        # Безопасный переход на CPU при проблемах с CUDA
-        try:
-            test_tensor = torch.zeros(1, 1).to(self.device)
-            _ = test_tensor + 1
-        except Exception as e:
-            logger.warning(f"CUDA error: {e}, using CPU instead")
-            self.device = torch.device('cpu')
-
-        # Инициализация модели
-        self.model = self._initialize_model(model_path)
-        self.model.eval()
+        # Создаем директорию модели, если она не существует
+        if model_path:
+            self.model_path = model_path
+            os.makedirs(model_path, exist_ok=True)
+        else:
+            self.model_path = "models"
+            os.makedirs(self.model_path, exist_ok=True)
 
         # Параметры для обработки аудио
         self.sample_rate = 16000
@@ -160,83 +238,514 @@ class AntiSpoofingDetector:
         self.score_history = []
         self.max_history = 50
 
-        logger.info(f"Anti-spoofing detector initialized on {self.device}")
+        # Инициализация модели с автозагрузкой
+        self.model_is_trained = False
 
-    def _load_or_create_model(self) -> nn.Module:
-        """
-        Загружает существующую модель или создает новую
-        """
         try:
-            # Используем улучшенную модель
-            model = ImprovedAntiSpoofingNet().to(self.device)
+            # Сначала проверяем локальные обученные модели
+            logger.info("Looking for local trained models")
+            available_models = self._check_local_models()
 
-            # Загрузка весов, если доступны
-            if os.path.exists(os.path.join(self.model_path, "anti_spoof_model.pt")):
+            if available_models:
+                # Если есть локальные модели, используем их
                 try:
-                    state_dict = torch.load(
-                        os.path.join(self.model_path, "anti_spoof_model.pt"),
-                        map_location=self.device
-                    )
-                    model.load_state_dict(state_dict)
-                    logger.info("Existing anti-spoof model loaded successfully")
-                except Exception as e:
-                    logger.warning(f"Could not load existing model: {e}")
+                    self.model = self._init_rawnet_model()
+                    self.using_rawnet = True
+                    self.using_pretrained = False
+                    logger.info("Using local trained RawNet2 model")
+                except:
+                    self.model = self._init_basic_model()
+                    if self.model is not None:
+                        self.using_rawnet = False
+                        self.using_pretrained = False
+                        logger.info("Using local trained CNN+LSTM model")
             else:
-                logger.info("Using new anti-spoof model")
+                # Если нет локальных моделей, пробуем загрузить предобученную
+                logger.info("No local models found, trying to download pretrained model")
+                try:
+                    self.model = self._init_pretrained_model()
+                    self.using_pretrained = True
+                    self.using_rawnet = False
+                    self.model_is_trained = True
+                    logger.info("Using downloaded pretrained model")
+                except Exception as download_error:
+                    logger.warning(f"Could not download pretrained model: {download_error}")
+                    logger.warning("Using statistical analysis only")
+                    self.model = None
+                    self.using_rawnet = False
+                    self.using_pretrained = False
 
-            return model
-        except Exception as e:
-            logger.error(f"Error loading or creating anti-spoof model: {e}")
+        except Exception as init_error:
+            logger.error(f"Model initialization failed: {init_error}")
+            logger.warning("Using statistical analysis only")
+            self.model = None
+            self.using_rawnet = False
+            self.using_pretrained = False
+
+    def _check_local_models(self):
+        """Проверяет какие обученные модели доступны локально"""
+        available_models = []
+
+        # Список возможных файлов моделей
+        model_files = [
+            "anti_spoof_model.pt",
+            "rawnet2_antispoof.pt",
+            "rawnet2_pretrained.pt",
+            "best_model.pt",
+            "aasist_pretrained.pt",
+            "ssl_antispoof.pt"
+        ]
+
+        for model_file in model_files:
+            full_path = os.path.join(self.model_path, model_file)
+            if os.path.exists(full_path):
+                try:
+                    # Пробуем загрузить для проверки валидности
+                    torch.load(full_path, map_location='cpu')
+                    available_models.append(model_file)
+                    logger.info(f"Found valid local model: {model_file}")
+                except Exception as e:
+                    logger.warning(f"Invalid model file {model_file}: {e}")
+
+        if not available_models:
+            logger.info("No local trained models found")
+            logger.info("Will attempt to download pretrained model")
+        else:
+            logger.info(f"Available local models: {available_models}")
+
+        return available_models
+
+        logger.info("Anti-spoofing detector initialized")
+
+    def _initialize_device(self, requested_device):
+        """Безопасно инициализирует устройство для вычислений с проверкой CUDA"""
+        if requested_device:
+            return torch.device(requested_device)
+
+        # Пытаемся использовать CUDA, если доступна
+        if torch.cuda.is_available():
+            try:
+                device = torch.device("cuda")
+                test_tensor = torch.zeros(1, 1).to(device)
+                _ = test_tensor + 1  # Проверяем, что операции работают
+                logger.info("CUDA is available and working properly")
+                return device
+            except Exception as e:
+                logger.warning(f"CUDA error: {e}, falling back to CPU")
+
+        # Используем CPU, если CUDA недоступна или с ней проблемы
+        logger.info("Using CPU for computations")
+        return torch.device("cpu")
+
+    def _init_pretrained_model(self):
+        """Инициализирует предобученную ESPnet RawNet3 модель с Hugging Face"""
+        try:
+            logger.info("Downloading ESPnet RawNet3 model from Hugging Face")
+            return self._download_espnet_rawnet3()
+
+        except Exception as download_error:
+            logger.error(f"Failed to download ESPnet RawNet3: {download_error}")
             raise
 
-    def _initialize_model(self, model_path):
-        """
-        Инициализация модели обнаружения спуфинга
-        """
+    def _download_espnet_rawnet3(self):
+        """Загружает ESPnet RawNet3 модель с Hugging Face"""
         try:
-            model = ImprovedAntiSpoofingNet()
+            model_name = "espnet/voxcelebs12_rawnet3"
+            logger.info(f"Downloading {model_name} from Hugging Face")
 
-            # Загрузка весов, если доступны
-            if model_path and os.path.isfile(os.path.join(model_path, "anti_spoof_model.pt")):
-                try:
-                    full_path = os.path.join(model_path, "anti_spoof_model.pt")
-                    state_dict = torch.load(full_path, map_location=self.device)
-                    model.load_state_dict(state_dict)
-                    logger.info(f"Loaded anti-spoofing model weights from {full_path}")
-                except Exception as e:
-                    logger.error(f"Error loading model weights: {e}")
-                    logger.info("Using untrained model")
-            else:
-                logger.warning("Anti-spoofing model weights not found, using untrained model")
+            # Определяем путь для сохранения
+            save_dir = os.path.join(self.model_path, "espnet_rawnet3")
+            os.makedirs(save_dir, exist_ok=True)
 
-            return model.to(self.device)
+            try:
+                # Пробуем использовать transformers
+                from transformers import AutoModel, AutoConfig
+                logger.info("Using transformers library to download ESPnet RawNet3")
+
+                # Загружаем конфигурацию и модель
+                config = AutoConfig.from_pretrained(
+                    model_name,
+                    cache_dir=save_dir,
+                    trust_remote_code=True
+                )
+
+                model = AutoModel.from_pretrained(
+                    model_name,
+                    config=config,
+                    cache_dir=save_dir,
+                    trust_remote_code=True
+                )
+
+                logger.info(f"Successfully downloaded {model_name} using transformers")
+
+            except Exception as transformers_error:
+                logger.warning(f"Transformers failed: {transformers_error}, trying direct download")
+
+                # Пробуем прямую загрузку файлов модели
+                import requests
+                import json
+                from urllib.parse import urljoin
+
+                # URL базовой модели на Hugging Face
+                base_url = f"https://huggingface.co/{model_name}/resolve/main/"
+
+                # Список файлов для загрузки
+                files_to_download = [
+                    "config.json",
+                    "pytorch_model.bin",
+                    "model.safetensors"  # альтернативный формат
+                ]
+
+                downloaded_files = []
+
+                for filename in files_to_download:
+                    try:
+                        file_url = urljoin(base_url, filename)
+                        file_path = os.path.join(save_dir, filename)
+
+                        logger.info(f"Downloading {filename} from {file_url}")
+
+                        response = requests.get(file_url, stream=True, timeout=60)
+                        response.raise_for_status()
+
+                        with open(file_path, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+
+                        downloaded_files.append(filename)
+                        logger.info(f"Successfully downloaded {filename}")
+
+                    except Exception as file_error:
+                        logger.warning(f"Could not download {filename}: {file_error}")
+                        continue
+
+                if not downloaded_files:
+                    raise Exception("No model files could be downloaded")
+
+                # Загружаем модель из скачанных файлов
+                model = self._load_espnet_model_from_files(save_dir, downloaded_files)
+
+            # Создаем wrapper для ESPnet модели
+            wrapper = self._create_espnet_wrapper(model, save_dir)
+
+            # Сохраняем информацию о модели
+            model_info = {
+                "model_name": model_name,
+                "model_type": "ESPnet_RawNet3",
+                "downloaded_date": datetime.now().isoformat(),
+                "save_dir": save_dir
+            }
+
+            with open(os.path.join(save_dir, "model_info.json"), "w") as f:
+                json.dump(model_info, f, indent=4)
+
+            logger.info("ESPnet RawNet3 model successfully initialized")
+            return wrapper
 
         except Exception as e:
-            logger.error(f"Error initializing anti-spoofing model: {e}")
-            # Возвращаем простую модель при ошибке
-            return self._create_simple_model().to(self.device)
+            logger.error(f"Error downloading ESPnet RawNet3: {e}")
+            raise
 
-    def _create_simple_model(self):
-        """
-        Создание простой модели при ошибках инициализации
-        """
-        return nn.Sequential(
-            nn.Linear(40, 64),  # Входной размер равен количеству мел-коэффициентов
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
+    def _load_espnet_model_from_files(self, save_dir, downloaded_files):
+        """Загружает ESPnet модель из скачанных файлов"""
+        try:
+            import json
+
+            # Читаем конфигурацию
+            config_path = os.path.join(save_dir, "config.json")
+            if "config.json" in downloaded_files and os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                logger.info("Loaded model configuration")
+            else:
+                config = {}
+
+            # Загружаем веса модели
+            model_weights = None
+
+            # Пробуем pytorch_model.bin
+            bin_path = os.path.join(save_dir, "pytorch_model.bin")
+            if "pytorch_model.bin" in downloaded_files and os.path.exists(bin_path):
+                try:
+                    model_weights = torch.load(bin_path, map_location=self.device)
+                    logger.info("Loaded model weights from pytorch_model.bin")
+                except Exception as e:
+                    logger.warning(f"Could not load pytorch_model.bin: {e}")
+
+            # Пробуем model.safetensors если bin не удался
+            if model_weights is None:
+                safetensors_path = os.path.join(save_dir, "model.safetensors")
+                if "model.safetensors" in downloaded_files and os.path.exists(safetensors_path):
+                    try:
+                        # Для safetensors нужна библиотека safetensors
+                        from safetensors import safe_open
+
+                        model_weights = {}
+                        with safe_open(safetensors_path, framework="pt", device=str(self.device)) as f:
+                            for key in f.keys():
+                                model_weights[key] = f.get_tensor(key)
+
+                        logger.info("Loaded model weights from model.safetensors")
+
+                    except ImportError:
+                        logger.warning("safetensors library not available")
+                    except Exception as e:
+                        logger.warning(f"Could not load model.safetensors: {e}")
+
+            if model_weights is None:
+                raise Exception("Could not load model weights from any file")
+
+            # Создаем модель RawNet3 на основе загруженных весов
+            model = self._create_rawnet3_model(config, model_weights)
+            return model
+
+        except Exception as e:
+            logger.error(f"Error loading ESPnet model from files: {e}")
+            raise
+
+    def _create_rawnet3_model(self, config, model_weights):
+        """Создает RawNet3 модель на основе конфигурации и весов"""
+        try:
+            # Создаем архитектуру RawNet3 (упрощенная версия)
+            class ESPnetRawNet3(nn.Module):
+                def __init__(self, config_dict=None):
+                    super(ESPnetRawNet3, self).__init__()
+
+                    # Параметры из конфигурации или значения по умолчанию
+                    if config_dict and 'model_conf' in config_dict:
+                        model_conf = config_dict['model_conf']
+                    else:
+                        model_conf = {}
+
+                    # SincNet слои
+                    self.sinc_conv = nn.Conv1d(
+                        in_channels=1,
+                        out_channels=model_conf.get('sinc_out_channels', 128),
+                        kernel_size=model_conf.get('sinc_kernel_size', 251),
+                        stride=1,
+                        padding=model_conf.get('sinc_kernel_size', 251) // 2,
+                        bias=False
+                    )
+
+                    # Residual blocks
+                    self.res_blocks = nn.ModuleList()
+                    channels = [128, 256, 512, 1024]
+
+                    for i, out_channels in enumerate(channels):
+                        in_channels = 128 if i == 0 else channels[i - 1]
+                        self.res_blocks.append(self._make_res_block(in_channels, out_channels))
+
+                    # Global statistics pooling
+                    self.gsp = nn.AdaptiveAvgPool1d(1)
+
+                    # Classifier для anti-spoofing
+                    self.classifier = nn.Sequential(
+                        nn.Linear(1024, 512),
+                        nn.ReLU(),
+                        nn.Dropout(0.5),
+                        nn.Linear(512, 256),
+                        nn.ReLU(),
+                        nn.Dropout(0.5),
+                        nn.Linear(256, 1),
+                        nn.Sigmoid()
+                    )
+
+                def _make_res_block(self, in_channels, out_channels):
+                    return nn.Sequential(
+                        nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1),
+                        nn.BatchNorm1d(out_channels),
+                        nn.ReLU(),
+                        nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1),
+                        nn.BatchNorm1d(out_channels),
+                        nn.ReLU(),
+                        nn.MaxPool1d(kernel_size=3, stride=2, padding=1),
+                        nn.Dropout(0.3)
+                    )
+
+                def forward(self, x):
+                    # x: [batch_size, samples] или [batch_size, 1, samples]
+                    if x.dim() == 2:
+                        x = x.unsqueeze(1)  # [batch_size, 1, samples]
+
+                    # SincNet convolution
+                    x = self.sinc_conv(x)
+
+                    # Residual blocks
+                    for res_block in self.res_blocks:
+                        x = res_block(x)
+
+                    # Global statistics pooling
+                    x = self.gsp(x)  # [batch_size, channels, 1]
+                    x = x.squeeze(-1)  # [batch_size, channels]
+
+                    # Classification
+                    output = self.classifier(x)
+                    return output.squeeze()
+
+            # Создаем модель
+            model = ESPnetRawNet3(config).to(self.device)
+
+            # Загружаем веса (с обработкой несовпадающих ключей)
+            try:
+                model.load_state_dict(model_weights, strict=False)
+                logger.info("Successfully loaded ESPnet RawNet3 weights")
+            except Exception as weight_error:
+                logger.warning(f"Could not load all weights: {weight_error}")
+                logger.info("Using partially loaded model")
+
+            model.eval()
+            return model
+
+        except Exception as e:
+            logger.error(f"Error creating RawNet3 model: {e}")
+            # Fallback к нашей базовой модели
+            logger.info("Using fallback RawNet2 model")
+            return RawNet2AntiSpoofing().to(self.device)
+
+    def _create_espnet_wrapper(self, model, save_dir):
+        """Создает wrapper для ESPnet модели"""
+
+        class ESPnetAntiSpoofWrapper:
+            def __init__(self, espnet_model, device, model_dir):
+                self.espnet_model = espnet_model.to(device)
+                self.device = device
+                self.model_dir = model_dir
+                self.espnet_model.eval()
+
+                # Параметры для обработки аудио
+                self.sample_rate = 16000
+                self.target_length = 64000  # 4 секунды при 16kHz
+
+            def __call__(self, waveform_tensor):
+                with torch.no_grad():
+                    # Обеспечиваем правильную размерность
+                    if waveform_tensor.dim() == 3:  # [1, 1, samples]
+                        waveform_tensor = waveform_tensor.squeeze(1)  # [1, samples]
+                    elif waveform_tensor.dim() == 1:  # [samples]
+                        waveform_tensor = waveform_tensor.unsqueeze(0)  # [1, samples]
+
+                    # Нормируем длину аудио
+                    current_length = waveform_tensor.shape[1]
+                    if current_length > self.target_length:
+                        # Берем из центра
+                        start = (current_length - self.target_length) // 2
+                        waveform_tensor = waveform_tensor[:, start:start + self.target_length]
+                    elif current_length < self.target_length:
+                        # Дополняем нулями
+                        pad_length = self.target_length - current_length
+                        waveform_tensor = torch.nn.functional.pad(
+                            waveform_tensor,
+                            (0, pad_length),
+                            mode='constant',
+                            value=0
+                        )
+
+                    # Получаем предсказание от модели
+                    try:
+                        output = self.espnet_model(waveform_tensor)
+
+                        # Если выход скалярный, возвращаем как есть
+                        if output.dim() == 0:
+                            return output
+                        # Если это вектор, берем первый элемент или среднее
+                        elif output.dim() == 1:
+                            return output.mean() if len(output) > 1 else output[0]
+                        else:
+                            return output.mean()
+
+                    except Exception as forward_error:
+                        logger.error(f"ESPnet model forward error: {forward_error}")
+                        # Возвращаем консервативную оценку
+                        return torch.tensor(0.25, device=self.device)
+
+        wrapper = ESPnetAntiSpoofWrapper(model, self.device, save_dir)
+        logger.info("Created ESPnet RawNet3 wrapper")
+        return wrapper
+
+    def _init_rawnet_model(self):
+        """Инициализирует модель RawNet2"""
+        # Ищем модель в разных местах
+        possible_paths = [
+            os.path.join(self.model_path, "rawnet2_antispoof.pt"),
+            os.path.join(self.model_path, "anti_spoof_model.pt"),
+            os.path.join(self.model_path, "rawnet2_pretrained.pt")
+        ]
+
+        model_loaded = False
+        model = RawNet2AntiSpoofing().to(self.device)
+
+        for model_file in possible_paths:
+            if os.path.exists(model_file):
+                try:
+                    state_dict = torch.load(model_file, map_location=self.device)
+                    model.load_state_dict(state_dict, strict=False)
+                    logger.info(f"Successfully loaded RawNet2 model from {model_file}")
+                    model_loaded = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Could not load RawNet2 weights from {model_file}: {e}")
+                    continue
+
+        if not model_loaded:
+            # Если не нашли обученную модель, НЕ используем случайную инициализацию
+            # Вместо этого переходим к базовой модели
+            raise FileNotFoundError("No trained RawNet2 model found")
+
+        model.eval()
+        return model
+
+    def _init_basic_model(self):
+        """Инициализирует базовую модель CNN+LSTM"""
+        # Ищем обученную модель в разных местах
+        possible_paths = [
+            os.path.join(self.model_path, "anti_spoof_model.pt"),
+            os.path.join(self.model_path, "rawnet2_antispoof.pt"),
+            os.path.join(self.model_path, "best_model.pt")
+        ]
+
+        model_loaded = False
+        model = ImprovedAntiSpoofingNet().to(self.device)
+
+        for model_file in possible_paths:
+            if os.path.exists(model_file):
+                try:
+                    state_dict = torch.load(model_file, map_location=self.device)
+                    model.load_state_dict(state_dict, strict=False)
+                    logger.info(f"Successfully loaded CNN+LSTM model from {model_file}")
+                    model_loaded = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Could not load model weights from {model_file}: {e}")
+                    continue
+
+        if not model_loaded:
+            # Если не нашли НИКАКОЙ обученной модели, создаем заглушку которая всегда возвращает "не спуфинг"
+            logger.warning("No trained anti-spoofing model found. Using conservative fallback.")
+            # Помечаем модель как необученную
+            self.model_is_trained = False
+            return None  # Будем использовать только статистический анализ
+
+        self.model_is_trained = True
+        model.eval()
+        return model
 
     def _extract_features(self, waveform):
-        """
-        Извлечение признаков из аудио для анализа спуфинга
-        """
+        """Извлечение признаков из аудио для анализа спуфинга"""
         try:
-            # Мел-спектрограмма
+            if hasattr(self, 'using_rawnet') and self.using_rawnet:
+                # Для RawNet2 возвращаем сырой сигнал
+                target_length = 48000  # 3 секунды при 16kHz
+                if len(waveform) > target_length:
+                    # Берем из середины
+                    start = (len(waveform) - target_length) // 2
+                    waveform = waveform[start:start + target_length]
+                elif len(waveform) < target_length:
+                    # Дополняем нулями
+                    waveform = np.pad(waveform, (0, target_length - len(waveform)))
+
+                return waveform
+
+            # Для CNN+LSTM модели используем мел-спектрограмму
             mel_spec = librosa.feature.melspectrogram(
                 y=waveform,
                 sr=self.sample_rate,
@@ -252,8 +761,8 @@ class AntiSpoofingDetector:
             # Нормализация
             log_mel_spec = (log_mel_spec - np.mean(log_mel_spec)) / (np.std(log_mel_spec) + 1e-8)
 
-            # Приведение к стандартному размeru для модели
-            target_length = 128  # Примерно 4 секunds при hop_length=256
+            # Приведение к стандартному размеру для модели
+            target_length = 128  # Примерно 4 секунды при hop_length=256
             current_length = log_mel_spec.shape[1]
 
             if current_length > target_length:
@@ -272,12 +781,13 @@ class AntiSpoofingDetector:
         except Exception as e:
             logger.error(f"Error extracting features: {e}")
             # Возвращаем случайные признаки в случае ошибки
-            return np.random.randn(self.n_mels, 128) * 0.1
+            if hasattr(self, 'using_rawnet') and self.using_rawnet:
+                return np.random.randn(48000) * 0.1
+            else:
+                return np.random.randn(self.n_mels, 128) * 0.1
 
     def _statistical_analysis(self, waveform):
-        """
-        Статистический анализ для дополнительной проверки
-        """
+        """Статистический анализ для дополнительной проверки"""
         try:
             # Анализ спектральных характеристик
             spectral_centroids = librosa.feature.spectral_centroid(y=waveform, sr=self.sample_rate)[0]
@@ -308,9 +818,7 @@ class AntiSpoofingDetector:
             return 0.3
 
     def detect(self, audio_path, threshold=None):
-        """
-        Обнаружение спуфинг-атаки в аудиофайле
-        """
+        """Основной метод для обнаружения спуфинг-атаки в аудиофайле"""
         if threshold is None:
             threshold = SPOOFING_THRESHOLD
 
@@ -324,6 +832,8 @@ class AntiSpoofingDetector:
                     "confidence": 0.5,
                     "error": "Audio file not found"
                 }
+
+            logger.info(f"Analyzing audio file: {audio_path}")
 
             # Загрузка и предобработка аудио
             waveform, sr = librosa.load(audio_path, sr=self.sample_rate, mono=True)
@@ -344,15 +854,18 @@ class AntiSpoofingDetector:
             # 1. Получение предсказания нейросетевой модели
             model_score = self._model_prediction(waveform)
 
-            # 2. Статистический analysis для дополнительной проверки
+            # 2. Статистический анализ для дополнительной проверки
             statistical_score = self._statistical_analysis(waveform)
 
             # 3. Комбинирование оценок
-            # Отдаем больший вес статистическому анализу для уменьшения ложных срабатываний
-            final_score = 0.3 * model_score + 0.7 * statistical_score
+            if hasattr(self, 'using_rawnet') and self.using_rawnet:
+                # Для RawNet2 больше доверяем модели
+                final_score = 0.7 * model_score + 0.3 * statistical_score
+            else:
+                # Для базовой модели больше веса статистическому анализу
+                final_score = 0.4 * model_score + 0.6 * statistical_score
 
             # 4. Дополнительные проверки для уменьшения ложных срабатываний
-            # Если это файл из API аутентификации, применяем более консервативный подход
             if 'auth_' in audio_path and audio_path.endswith('.wav'):
                 # Дополнительно снижаем оценку для файлов аутентификации
                 final_score = max(0.0, final_score - 0.15)
@@ -382,6 +895,7 @@ class AntiSpoofingDetector:
 
         except Exception as e:
             logger.error(f"Error in spoofing detection: {e}")
+            # В случае ошибки возвращаем консервативный результат
             return {
                 "is_spoof": False,
                 "spoof_probability": DEFAULT_SCORE,
@@ -390,16 +904,25 @@ class AntiSpoofingDetector:
             }
 
     def _model_prediction(self, waveform):
-        """
-        Предсказание нейросетевой модели
-        """
+        """Предсказание нейросетевой модели"""
         try:
+            # Если нет обученной модели, используем только статистический анализ
+            if self.model is None or not hasattr(self, 'model_is_trained') or not self.model_is_trained:
+                logger.info("No trained model available, using statistical analysis only")
+                return 0.25  # Консервативная оценка для реального голоса
+
             with torch.no_grad():
                 # Извлечение признаков
                 features = self._extract_features(waveform)
 
-                # Преобразование в тензор и добавление batch dimension
-                features_tensor = torch.FloatTensor(features).unsqueeze(0).unsqueeze(0)  # [1, 1, n_mels, time]
+                # Подготовка тензора в зависимости от типа модели
+                if hasattr(self, 'using_rawnet') and self.using_rawnet:
+                    # Для RawNet2 используем сырой сигнал
+                    features_tensor = torch.FloatTensor(features).unsqueeze(0)  # [1, samples]
+                else:
+                    # Для CNN+LSTM модели используем мел-спектрограмму
+                    features_tensor = torch.FloatTensor(features).unsqueeze(0).unsqueeze(0)  # [1, 1, n_mels, time]
+
                 features_tensor = features_tensor.to(self.device)
 
                 # Предсказание модели
@@ -411,22 +934,25 @@ class AntiSpoofingDetector:
                         if prediction.dim() == 0:  # Скалярный тензор
                             prediction = prediction.item()
                         else:
-                            prediction = prediction.cpu().numpy()[0] if len(prediction) > 0 else 0.3
+                            prediction = prediction.cpu().numpy()
+                            if len(prediction.shape) > 0 and len(prediction) > 0:
+                                prediction = prediction[0]
+                            else:
+                                prediction = 0.25
 
                     return float(prediction)
 
                 except Exception as model_error:
                     logger.error(f"Model prediction error: {model_error}")
-                    return 0.3
+                    return 0.25
 
         except Exception as e:
             logger.error(f"Error in model prediction: {e}")
-            return 0.3
+            # В случае ошибки возвращаем консервативную оценку
+            return 0.25
 
     def _get_adaptive_threshold(self, current_score):
-        """
-        Получение адаптивного порога на основе истории оценок
-        """
+        """Получение адаптивного порога на основе истории оценок"""
         try:
             if len(self.score_history) < 5:
                 return SPOOFING_THRESHOLD
@@ -451,16 +977,12 @@ class AntiSpoofingDetector:
             return SPOOFING_THRESHOLD
 
     def reset_history(self):
-        """
-        Сброс истории оценок
-        """
+        """Сброс истории оценок"""
         self.score_history = []
         logger.info("Score history reset")
 
     def get_statistics(self):
-        """
-        Получение статистики работы детектора
-        """
+        """Получение статистики работы детектора"""
         if not self.score_history:
             return {
                 "total_detections": 0,
@@ -479,16 +1001,9 @@ class AntiSpoofingDetector:
         }
 
 
-class RawNet2AntiSpoofing(nn.Module):
-    """
-    Класс RawNet2AntiSpoofing для обратной совместимости с anti_spoof_trainer
-    """
+# Класс для обратной совместимости с trainer
+class RawNet2AntiSpoofing_Compat(RawNet2AntiSpoofing):
+    """Класс для обратной совместимости с anti_spoof_trainer"""
 
     def __init__(self, d_args=None):
-        super(RawNet2AntiSpoofing, self).__init__()
-
-        # Используем улучшенную модель внутри
-        self.model = ImprovedAntiSpoofingNet()
-
-    def forward(self, x):
-        return self.model(x)
+        super().__init__(d_args)

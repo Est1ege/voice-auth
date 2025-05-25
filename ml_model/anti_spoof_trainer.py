@@ -1,4 +1,4 @@
-# ml_model/anti_spoof_trainer.py - Исправленная версия
+# ml_model/anti_spoof_trainer.py - Исправленная версия по аналогии с voice_embedding.py
 
 import os
 import torch
@@ -18,7 +18,7 @@ from tqdm import tqdm
 # Импорт необходимых библиотек для обработки аудио
 import librosa
 import soundfile as sf
-from anti_spoof import ImprovedAntiSpoofingNet, RawNet2AntiSpoofing  # Импорт модели для защиты от спуфинга
+from anti_spoof import ImprovedAntiSpoofingNet, RawNet2AntiSpoofing
 
 # Настройка логирования
 logging.basicConfig(
@@ -30,15 +30,21 @@ logger = logging.getLogger("anti_spoof_trainer")
 
 class AntiSpoofDataset(Dataset):
     """
-    Датасет для обучения модели защиты от спуфинга
+    Датасет для обучения модели защиты от спуфинга с правильной обработкой данных
     """
 
-    def __init__(self, real_files, spoof_files, sample_rate=16000, duration=3.0):
+    def __init__(self, real_files, spoof_files, sample_rate=16000, duration=3.0, use_rawnet=False):
         self.real_files = real_files
         self.spoof_files = spoof_files
         self.sample_rate = sample_rate
         self.duration = duration
         self.target_len = int(duration * sample_rate)
+        self.use_rawnet = use_rawnet
+
+        # Параметры для мел-спектрограммы
+        self.n_fft = 512
+        self.hop_length = 256
+        self.n_mels = 40
 
         logger.info(f"Dataset created with {len(real_files)} real and {len(spoof_files)} spoof files")
 
@@ -56,9 +62,16 @@ class AntiSpoofDataset(Dataset):
             file_path = self.spoof_files[idx - len(self.real_files)]
             label = 1  # 1 = поддельный
 
-        # Загрузка аудио
+        # Загрузка аудио - используем тот же подход что и в voice_embedding.py
         try:
+            # Загрузка и нормализация аудио с помощью librosa
             waveform, sr = librosa.load(file_path, sr=self.sample_rate, mono=True)
+
+            # Проверка на тишину или слишком короткий файл
+            if len(waveform) < 0.5 * self.sample_rate or np.max(np.abs(waveform)) < 0.01:
+                logger.warning(f"Audio file {file_path} is too short or contains silence")
+                # Генерируем синтетический сигнал для тестирования
+                waveform = np.sin(np.linspace(0, 100 * np.pi, self.target_len)) * 0.1
 
             # Регулируем длительность
             if len(waveform) > self.target_len:
@@ -69,20 +82,59 @@ class AntiSpoofDataset(Dataset):
                 # Дополняем нулями до нужной длены
                 waveform = np.pad(waveform, (0, max(0, self.target_len - len(waveform))))
 
-            # Нормализация
-            waveform = librosa.util.normalize(waveform)
+            # Нормализация амплитуды
+            waveform = waveform / (np.max(np.abs(waveform)) + 1e-10)
 
-            return torch.FloatTensor(waveform), torch.tensor(label, dtype=torch.float32)
+            # Возвращаем данные в зависимости от типа модели
+            if self.use_rawnet:
+                # Для RawNet2 возвращаем сырой сигнал
+                return torch.FloatTensor(waveform), torch.tensor(label, dtype=torch.float32)
+            else:
+                # Для CNN+LSTM модели создаем мел-спектрограмму
+                mel_spec = librosa.feature.melspectrogram(
+                    y=waveform,
+                    sr=self.sample_rate,
+                    n_fft=self.n_fft,
+                    hop_length=self.hop_length,
+                    n_mels=self.n_mels,
+                    fmax=self.sample_rate // 2
+                )
+
+                # Преобразование в логарифмическую шкалу
+                log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+
+                # Нормализация
+                log_mel_spec = (log_mel_spec - np.mean(log_mel_spec)) / (np.std(log_mel_spec) + 1e-8)
+
+                # Приведение к стандартному размеру
+                target_time_length = 128
+                current_length = log_mel_spec.shape[1]
+
+                if current_length > target_time_length:
+                    start_idx = (current_length - target_time_length) // 2
+                    log_mel_spec = log_mel_spec[:, start_idx:start_idx + target_time_length]
+                elif current_length < target_time_length:
+                    pad_width = target_time_length - current_length
+                    pad_left = pad_width // 2
+                    pad_right = pad_width - pad_left
+                    log_mel_spec = np.pad(log_mel_spec, ((0, 0), (pad_left, pad_right)), mode='constant')
+
+                return torch.FloatTensor(log_mel_spec), torch.tensor(label, dtype=torch.float32)
+
         except Exception as e:
             logger.error(f"Error loading file {file_path}: {e}")
-            # Возвращаем случайный шум при ошибке
-            waveform = np.random.randn(self.target_len)
-            return torch.FloatTensor(waveform), torch.tensor(label, dtype=torch.float32)
+            # Возвращаем случайные данные при ошибке
+            if self.use_rawnet:
+                waveform = np.random.randn(self.target_len) * 0.1
+                return torch.FloatTensor(waveform), torch.tensor(label, dtype=torch.float32)
+            else:
+                mel_spec = np.random.randn(self.n_mels, 128) * 0.1
+                return torch.FloatTensor(mel_spec), torch.tensor(label, dtype=torch.float32)
 
 
 class AntiSpoofTrainer:
     """
-    Класс для тренировки модели защиты от спуфинга с поддержкой RawNet
+    Класс для тренировки модели защиты от спуфинга по аналогии с voice_embedding.py
     """
 
     def __init__(
@@ -101,7 +153,10 @@ class AntiSpoofTrainer:
         self.real_audio_path = real_audio_path
         self.spoof_audio_path = spoof_audio_path
         self.output_path = output_path
-        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Инициализируем устройство используя безопасный метод
+        self.device = self._initialize_device(device)
+
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.num_epochs = num_epochs
@@ -123,90 +178,82 @@ class AntiSpoofTrainer:
             "validation_accuracy": []
         }
 
+        # Создаем директории
+        os.makedirs(self.model_path, exist_ok=True)
+        os.makedirs(self.output_path, exist_ok=True)
+
         logger.info(f"Anti-spoof trainer initialized (device: {self.device})")
+
+    def _initialize_device(self, requested_device):
+        """Безопасно инициализирует устройство для вычислений с проверкой CUDA"""
+        if requested_device:
+            return torch.device(requested_device)
+
+        # Пытаемся использовать CUDA, если доступна
+        if torch.cuda.is_available():
+            try:
+                device = torch.device("cuda")
+                test_tensor = torch.zeros(1, 1).to(device)
+                _ = test_tensor + 1  # Проверяем, что операции работают
+                logger.info("CUDA is available and working properly")
+                return device
+            except Exception as e:
+                logger.warning(f"CUDA error: {e}, falling back to CPU")
+
+        # Используем CPU, если CUDA недоступна или с ней проблемы
+        logger.info("Using CPU for computations")
+        return torch.device("cpu")
 
     def _load_or_create_model(self) -> nn.Module:
         """
-        Загружает существующую модель или создает новую с поддержкой RawNet
+        Загружает существующую модель или создает новую с поддержкой разных архитектур
         """
         try:
+            # Выбираем тип модели
             if self.use_pretrained_rawnet:
-                # Пытаемся загрузить предобученную RawNet модель
-                model = self._load_pretrained_rawnet()
+                logger.info("Trying to initialize RawNet2 model")
+                try:
+                    model = RawNet2AntiSpoofing().to(self.device)
+                    self.using_rawnet = True
+                    logger.info("RawNet2 model initialized successfully")
+                except Exception as rawnet_error:
+                    logger.warning(f"Could not initialize RawNet2: {rawnet_error}")
+                    logger.info("Falling back to CNN+LSTM model")
+                    model = ImprovedAntiSpoofingNet().to(self.device)
+                    self.using_rawnet = False
             else:
-                # Используем улучшенную модель
+                # Используем улучшенную CNN+LSTM модель
                 model = ImprovedAntiSpoofingNet().to(self.device)
+                self.using_rawnet = False
+                logger.info("Using CNN+LSTM model")
 
             # Проверяем наличие сохраненных весов
-            saved_model_path = os.path.join(self.model_path, "anti_spoof_model.pt")
+            if self.using_rawnet:
+                saved_model_path = os.path.join(self.model_path, "rawnet2_antispoof.pt")
+            else:
+                saved_model_path = os.path.join(self.model_path, "anti_spoof_model.pt")
+
             if os.path.exists(saved_model_path):
                 try:
-                    logger.info("Loading existing anti-spoof model...")
+                    logger.info(f"Loading existing model from {saved_model_path}")
                     state_dict = torch.load(saved_model_path, map_location=self.device)
                     model.load_state_dict(state_dict, strict=False)  # strict=False для совместимости
-                    logger.info("Existing anti-spoof model loaded successfully")
+                    logger.info("Existing model loaded successfully")
                 except Exception as e:
                     logger.warning(f"Could not load existing model: {e}. Using new model.")
             else:
-                logger.info("Using new anti-spoof model")
+                logger.info("Using new model")
 
             return model
         except Exception as e:
-            logger.error(f"Error loading or creating anti-spoof model: {e}")
+            logger.error(f"Error loading or creating model: {e}")
             # Возвращаем базовую модель при ошибке
-            return ImprovedAntiSpoofingNet().to(self.device)
-
-    def _load_pretrained_rawnet(self):
-        """
-        Загружает предобученную RawNet модель
-        """
-        try:
-            # Путь к предобученной модели RawNet
-            pretrained_path = os.path.join(self.model_path, "rawnet2_pretrained.pt")
-
-            if os.path.exists(pretrained_path):
-                logger.info(f"Loading pretrained RawNet from {pretrained_path}")
-
-                # Создаем модель RawNet2
-                model = RawNet2AntiSpoofing().to(self.device)
-
-                # Загружаем предобученные веса
-                checkpoint = torch.load(pretrained_path, map_location=self.device)
-
-                # Обрабатываем различные форматы checkpoint
-                if 'model_state_dict' in checkpoint:
-                    state_dict = checkpoint['model_state_dict']
-                elif 'state_dict' in checkpoint:
-                    state_dict = checkpoint['state_dict']
-                else:
-                    state_dict = checkpoint
-
-                # Загружаем веса с обработкой несовместимых ключей
-                model.load_state_dict(state_dict, strict=False)
-
-                logger.info("Pretrained RawNet loaded successfully")
-                return model
-            else:
-                logger.warning(f"Pretrained RawNet not found at {pretrained_path}")
-                logger.info("Downloading pretrained RawNet weights...")
-
-                # Создаем модель и возвращаем ее (можно добавить автозагрузку)
-                model = RawNet2AntiSpoofing().to(self.device)
-
-                # TODO: Добавить автозагрузку предобученных весов RawNet2
-                # Пока используем случайную инициализацию
-                logger.warning("Using randomly initialized RawNet model")
-
-                return model
-
-        except Exception as e:
-            logger.error(f"Error loading pretrained RawNet: {e}")
-            # Возвращаем улучшенную модель при ошибке
+            self.using_rawnet = False
             return ImprovedAntiSpoofingNet().to(self.device)
 
     def _prepare_data(self) -> Tuple[DataLoader, DataLoader]:
         """
-        Подготовка данных для тренировки модели защиты от спуфинга
+        Подготовка данных для тренировки с улучшенной обработкой
         """
         self.status["status"] = "preparing_data"
         self.status["message"] = "Preparing training data"
@@ -225,14 +272,14 @@ class AntiSpoofTrainer:
             real_files = []
             for root, _, files in os.walk(self.real_audio_path):
                 for file in files:
-                    if file.endswith((".wav", ".WAV")):
+                    if file.endswith((".wav", ".WAV", ".mp3", ".flac")):
                         real_files.append(os.path.join(root, file))
 
             # Поиск поддельных аудиофайлов
             spoof_files = []
             for root, _, files in os.walk(self.spoof_audio_path):
                 for file in files:
-                    if file.endswith((".wav", ".WAV")):
+                    if file.endswith((".wav", ".WAV", ".mp3", ".flac")):
                         spoof_files.append(os.path.join(root, file))
 
             logger.info(f"Found {len(real_files)} real audio files and {len(spoof_files)} spoof audio files")
@@ -259,9 +306,17 @@ class AntiSpoofTrainer:
             train_spoof = spoof_files[:int(len(spoof_files) * 0.8)]
             val_spoof = spoof_files[int(len(spoof_files) * 0.8):]
 
-            # Создание датасетов
-            train_dataset = AntiSpoofDataset(train_real, train_spoof, self.sample_rate)
-            val_dataset = AntiSpoofDataset(val_real, val_spoof, self.sample_rate)
+            # Создание датасетов с правильным флагом для типа модели
+            train_dataset = AntiSpoofDataset(
+                train_real, train_spoof,
+                self.sample_rate,
+                use_rawnet=hasattr(self, 'using_rawnet') and self.using_rawnet
+            )
+            val_dataset = AntiSpoofDataset(
+                val_real, val_spoof,
+                self.sample_rate,
+                use_rawnet=hasattr(self, 'using_rawnet') and self.using_rawnet
+            )
 
             # Создание загрузчиков данных
             train_loader = DataLoader(
@@ -306,8 +361,13 @@ class AntiSpoofTrainer:
                 # Загрузка аудио
                 waveform, sr = librosa.load(file_path, sr=self.sample_rate, mono=True)
 
-                # Синтетическая атака (простая реализация)
-                attack_type = np.random.choice(["playback", "pitch_shift", "time_stretch", "noise"])
+                # Проверяем на тишину
+                if len(waveform) < 0.5 * self.sample_rate or np.max(np.abs(waveform)) < 0.01:
+                    # Создаем синтетический сигнал
+                    waveform = np.sin(np.linspace(0, 100 * np.pi, self.sample_rate * 3)) * 0.1
+
+                # Синтетическая атака (улучшенная реализация)
+                attack_type = np.random.choice(["playback", "pitch_shift", "time_stretch", "noise", "vocoder"])
 
                 if attack_type == "playback":
                     # Имитация записи через динамик
@@ -337,8 +397,14 @@ class AntiSpoofTrainer:
                     noise_level = np.random.uniform(0.05, 0.2)
                     waveform = waveform + np.random.normal(0, noise_level, len(waveform))
 
+                elif attack_type == "vocoder":
+                    # Имитация вокодера
+                    # Простая имитация путем квантования амплитуды
+                    quantization_levels = np.random.randint(8, 32)
+                    waveform = np.round(waveform * quantization_levels) / quantization_levels
+
                 # Нормализация
-                waveform = librosa.util.normalize(waveform)
+                waveform = waveform / (np.max(np.abs(waveform)) + 1e-10)
 
                 # Сохранение синтетического спуфинг аудио
                 out_file = os.path.join(synth_dir, f"synth_spoof_{i}_{attack_type}.wav")
@@ -356,7 +422,7 @@ class AntiSpoofTrainer:
 
     def train(self, task_id: str = None, progress_callback=None) -> Dict[str, Any]:
         """
-        Обучает модель защиты от спуфинга с поддержкой progress_callback
+        Обучает модель защиты от спуфинга с улучшенной обработкой ошибок
         """
         self.status["start_time"] = datetime.now().isoformat()
         self.status["status"] = "training"
@@ -366,6 +432,10 @@ class AntiSpoofTrainer:
             # Загрузка или создание модели
             model = self._load_or_create_model()
             model.train()
+
+            # Определяем тип модели для правильной обработки данных
+            is_rawnet = hasattr(self, 'using_rawnet') and self.using_rawnet
+            logger.info(f"Using model type: {'RawNet2' if is_rawnet else 'CNN+LSTM'}")
 
             # Подготовка данных
             train_loader, val_loader = self._prepare_data()
@@ -385,54 +455,128 @@ class AntiSpoofTrainer:
                 train_loss = 0.0
                 train_correct = 0
                 train_total = 0
+                train_batches = 0
 
-                for waveforms, labels in train_loader:
-                    # Перенос данных на устройство
-                    waveforms = waveforms.unsqueeze(1).to(self.device)  # [batch, 1, time]
-                    labels = labels.to(self.device)
+                for batch_idx, (data, labels) in enumerate(train_loader):
+                    try:
+                        # Правильная подготовка данных в зависимости от типа модели
+                        if is_rawnet:
+                            # Для RawNet2: [batch_size, samples]
+                            if data.dim() == 2:  # [batch_size, samples]
+                                waveforms = data.to(self.device)
+                            else:  # убираем лишние измерения
+                                waveforms = data.squeeze().to(self.device)
+                                if waveforms.dim() == 1:  # Если остался 1D, добавляем batch dimension
+                                    waveforms = waveforms.unsqueeze(0)
+                        else:
+                            # Для CNN+LSTM: [batch_size, 1, time, freq]
+                            if data.dim() == 3:  # [batch_size, time, freq]
+                                waveforms = data.unsqueeze(1).to(self.device)
+                            else:  # [batch_size, time, freq] или другое
+                                waveforms = data.to(self.device)
+                                if waveforms.dim() == 3:
+                                    waveforms = waveforms.unsqueeze(1)
 
-                    # Forward pass
-                    outputs = model(waveforms).squeeze()
-                    loss = criterion(outputs, labels)
+                        labels = labels.to(self.device)
 
-                    # Backward pass и оптимизация
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                        # Forward pass
+                        outputs = model(waveforms)
+                        if outputs.dim() > 1:
+                            outputs = outputs.squeeze()
 
-                    # Статистика
-                    train_loss += loss.item() * waveforms.size(0)
-                    predicted = (outputs >= 0.5).float()
-                    train_correct += (predicted == labels).sum().item()
-                    train_total += labels.size(0)
+                        # Убеждаемся что размерности совпадают
+                        if outputs.shape != labels.shape:
+                            if outputs.dim() == 0:  # скалярный тензор
+                                outputs = outputs.unsqueeze(0)
+                            if labels.dim() == 0:
+                                labels = labels.unsqueeze(0)
 
-                train_loss /= len(train_loader.dataset)
-                train_accuracy = train_correct / train_total * 100
+                        loss = criterion(outputs, labels)
+
+                        # Backward pass и оптимизация
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
+
+                        # Статистика
+                        train_loss += loss.item()
+                        predicted = (outputs >= 0.5).float()
+                        train_correct += (predicted == labels).sum().item()
+                        train_total += labels.size(0)
+                        train_batches += 1
+
+                    except Exception as batch_error:
+                        logger.error(f"Error in training batch {batch_idx}: {batch_error}")
+                        logger.error(f"Data shape: {data.shape}, Labels shape: {labels.shape}")
+                        continue
+
+                if train_batches > 0:
+                    train_loss /= train_batches
+                    train_accuracy = train_correct / train_total * 100 if train_total > 0 else 0
+                else:
+                    logger.error("No successful training batches!")
+                    break
 
                 # Валидация
                 model.eval()
                 val_loss = 0.0
                 val_correct = 0
                 val_total = 0
+                val_batches = 0
 
                 with torch.no_grad():
-                    for waveforms, labels in val_loader:
-                        # Перенос данных на устройство
-                        waveforms = waveforms.unsqueeze(1).to(self.device)
-                        labels = labels.to(self.device)
+                    for data, labels in val_loader:
+                        try:
+                            # Правильная подготовка данных для валидации
+                            if is_rawnet:
+                                if data.dim() == 2:
+                                    waveforms = data.to(self.device)
+                                else:
+                                    waveforms = data.squeeze().to(self.device)
+                                    if waveforms.dim() == 1:
+                                        waveforms = waveforms.unsqueeze(0)
+                            else:
+                                if data.dim() == 3:
+                                    waveforms = data.unsqueeze(1).to(self.device)
+                                else:
+                                    waveforms = data.to(self.device)
+                                    if waveforms.dim() == 3:
+                                        waveforms = waveforms.unsqueeze(1)
 
-                        # Forward pass
-                        outputs = model(waveforms).squeeze()
-                        loss = criterion(outputs, labels)
+                            labels = labels.to(self.device)
 
-                        # Статистика
-                        val_loss += loss.item() * waveforms.size(0)
-                        predicted = (outputs >= 0.5).float()
-                        val_correct += (predicted == labels).sum().item()
-                        val_total += labels.size(0)
+                            # Forward pass
+                            outputs = model(waveforms)
+                            if outputs.dim() > 1:
+                                outputs = outputs.squeeze()
 
-                val_loss /= len(val_loader.dataset)
-                val_accuracy = val_correct / val_total * 100
+                            # Убеждаемся что размерности совпадают
+                            if outputs.shape != labels.shape:
+                                if outputs.dim() == 0:
+                                    outputs = outputs.unsqueeze(0)
+                                if labels.dim() == 0:
+                                    labels = labels.unsqueeze(0)
+
+                            loss = criterion(outputs, labels)
+
+                            # Статистика
+                            val_loss += loss.item()
+                            predicted = (outputs >= 0.5).float()
+                            val_correct += (predicted == labels).sum().item()
+                            val_total += labels.size(0)
+                            val_batches += 1
+
+                        except Exception as val_error:
+                            logger.error(f"Validation error: {val_error}")
+                            continue
+
+                if val_batches > 0:
+                    val_loss /= val_batches
+                    val_accuracy = val_correct / val_total * 100 if val_total > 0 else 0
+                else:
+                    logger.warning("No successful validation batches!")
+                    val_loss = float('inf')
+                    val_accuracy = 0
 
                 # Вызов callback для обновления прогресса
                 if progress_callback:
@@ -447,10 +591,13 @@ class AntiSpoofTrainer:
                     patience_counter = 0
 
                     # Сохранение модели
-                    os.makedirs(self.output_path, exist_ok=True)
-                    torch.save(model.state_dict(), os.path.join(self.output_path, "anti_spoof_model.pt"))
-                    logger.info(
-                        f"Saved best anti-spoof model (val_loss: {val_loss:.4f}, val_accuracy: {val_accuracy:.2f}%)")
+                    try:
+                        model_filename = "rawnet2_antispoof.pt" if is_rawnet else "anti_spoof_model.pt"
+                        torch.save(model.state_dict(), os.path.join(self.output_path, model_filename))
+                        logger.info(
+                            f"Saved best anti-spoof model (val_loss: {val_loss:.4f}, val_accuracy: {val_accuracy:.2f}%)")
+                    except Exception as save_error:
+                        logger.error(f"Error saving model: {save_error}")
                 else:
                     patience_counter += 1
 
@@ -473,23 +620,37 @@ class AntiSpoofTrainer:
                     break
 
             # Копирование лучшей модели в основную директорию
-            shutil.copy(
-                os.path.join(self.output_path, "anti_spoof_model.pt"),
-                os.path.join(self.model_path, "anti_spoof_model.pt")
-            )
+            try:
+                model_filename = "rawnet2_antispoof.pt" if is_rawnet else "anti_spoof_model.pt"
+                src_path = os.path.join(self.output_path, model_filename)
+                dst_path = os.path.join(self.model_path, model_filename)
+
+                if os.path.exists(src_path):
+                    shutil.copy(src_path, dst_path)
+                    logger.info(f"Copied best model to {dst_path}")
+                else:
+                    logger.warning(f"Best model file not found: {src_path}")
+            except Exception as copy_error:
+                logger.error(f"Error copying model: {copy_error}")
 
             # Создание конфигурационного файла
             config = {
-                "model_type": "RawNet2AntiSpoofing" if self.use_pretrained_rawnet else "ImprovedAntiSpoofingNet",
+                "model_type": "RawNet2AntiSpoofing" if is_rawnet else "ImprovedAntiSpoofingNet",
                 "sample_rate": self.sample_rate,
                 "trained_date": datetime.now().isoformat(),
                 "best_val_loss": best_val_loss,
-                "best_val_accuracy": val_accuracy,
-                "use_pretrained_rawnet": self.use_pretrained_rawnet
+                "best_val_accuracy": val_accuracy if 'val_accuracy' in locals() else 0.0,
+                "use_pretrained_rawnet": self.use_pretrained_rawnet,
+                "epochs_completed": epoch + 1,
+                "early_stopped": patience_counter >= patience
             }
 
-            with open(os.path.join(self.model_path, "anti_spoof_config.json"), "w") as f:
-                json.dump(config, f, indent=4)
+            try:
+                with open(os.path.join(self.model_path, "anti_spoof_config.json"), "w") as f:
+                    json.dump(config, f, indent=4)
+                logger.info("Configuration saved successfully")
+            except Exception as config_error:
+                logger.error(f"Error saving configuration: {config_error}")
 
             # Обновление статуса
             self.status["status"] = "completed"
@@ -513,3 +674,7 @@ class AntiSpoofTrainer:
         Возвращает текущий статус тренировки
         """
         return self.status
+
+
+# Для обратной совместимости
+RawNet2AntiSpoofing = RawNet2AntiSpoofing

@@ -82,17 +82,20 @@
         .table th {
             font-weight: 600;
         }
+        .main_head {
+            padding-top: 4.5rem !important;
+        }
     </style>
 </head>
 <body>
     <header class="navbar navbar-dark bg-dark fixed-top">
         <div class="container-fluid">
-            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Authentication System</a>
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Recognition System</a>
             <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="d-flex align-items-center">
-                <span class="text-white me-2">{{ session.username }}</span>
+                <span class="text-white me-2">{{ username }}</span>
                 <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
             </div>
         </div>
@@ -132,7 +135,7 @@
                 </div>
             </nav>
 
-            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main_head">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">System Status</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">
@@ -339,86 +342,6 @@
                                                 </div>
                                             </li>
                                         </ul>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- System Management Card -->
-                <div class="card shadow mb-4">
-                    <div class="card-header bg-warning text-white">
-                        <h5 class="mb-0"><i class="bi bi-tools"></i> System Management</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="alert alert-warning">
-                            <strong>Warning!</strong> The following actions can affect system operation. Use them only when necessary.
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <div class="card border-0 bg-light">
-                                    <div class="card-header">System Reinitialization</div>
-                                    <div class="card-body">
-                                        <p>Reinitializes ML service components and reloads user data. Use this if the system is experiencing matching issues.</p>
-
-                                        <!-- Flash Messages for Reinitialization -->
-                                        {% with messages = get_flashed_messages(with_categories=true) %}
-                                            {% if messages %}
-                                                {% for category, message in messages %}
-                                                    {% if 'reinitial' in message.lower() %}
-                                                        <div class="alert alert-{{ category }} mb-3">
-                                                            {{ message }}
-                                                        </div>
-                                                    {% endif %}
-                                                {% endfor %}
-                                            {% endif %}
-                                        {% endwith %}
-
-                                        <form action="/admin/system/reinitialize" method="post" id="reinitializeForm">
-                                            <button type="submit" class="btn btn-warning">
-                                                <i class="bi bi-arrow-repeat"></i> Reinitialize System
-                                            </button>
-                                        </form>
-
-                                        <!-- Progress indicator (hidden by default) -->
-                                        <div id="reinitialization-progress" style="display: none;" class="mt-3">
-                                            <div class="progress">
-                                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
-                                            </div>
-                                            <p class="text-center mt-2">System reinitialization in progress, please wait...</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <div class="card border-0 bg-light">
-                                    <div class="card-header">Thresholds Configuration</div>
-                                    <div class="card-body">
-                                        <p>Adjust voice matching and anti-spoofing thresholds.</p>
-                                        <div class="mb-3">
-                                            <label class="form-label">Matching Threshold</label>
-                                            <select class="form-select" id="matchingThreshold">
-                                                <option value="0.5">0.5 - Very Permissive</option>
-                                                <option value="0.6">0.6 - Permissive</option>
-                                                <option value="0.7" selected>0.7 - Balanced</option>
-                                                <option value="0.8">0.8 - Strict</option>
-                                                <option value="0.9">0.9 - Very Strict</option>
-                                            </select>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">Anti-Spoofing Threshold</label>
-                                            <select class="form-select" id="spoofingThreshold">
-                                                <option value="0.3">0.3 - Less Sensitive</option>
-                                                <option value="0.5">0.5 - Balanced</option>
-                                                <option value="0.7" selected>0.7 - More Sensitive</option>
-                                            </select>
-                                        </div>
-                                        <button class="btn btn-primary" id="saveThresholdsBtn">
-                                            <i class="bi bi-save"></i> Save Thresholds
-                                        </button>
                                     </div>
                                 </div>
                             </div>

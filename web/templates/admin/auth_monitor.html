@@ -92,9 +92,24 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             border-radius: 8px;
         }
+        .main_head {
+            padding-top: 4.5rem !important;
+        }
     </style>
 </head>
 <body>
+    <header class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="#">Voice Recognition System</a>
+            <button class="navbar-toggler d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-2">{{ username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </header>
 
     <div class="container-fluid">
         <div class="row">
@@ -131,7 +146,7 @@
                 </div>
             </nav>
 
-            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main_head">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">Voice Authentication Monitor</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">

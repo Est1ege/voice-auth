@@ -206,7 +206,6 @@ def admin_dashboard():
                            username=session['username'],
                            **dashboard_data)
 
-
 def format_timestamp(timestamp_str):
     """Форматирует временную метку для отображения"""
     if not timestamp_str:
@@ -224,7 +223,6 @@ def format_timestamp(timestamp_str):
         return timestamp_str[:19].replace('T', ' ')
     except Exception:
         return timestamp_str
-
 
 def get_event_display_name(event_type):
     """Преобразует тип события в читаемое название"""

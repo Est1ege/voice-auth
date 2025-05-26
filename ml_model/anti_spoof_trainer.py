@@ -1,4 +1,4 @@
-# ml_model/anti_spoof_trainer.py - Исправленная версия по аналогии с voice_embedding.py
+# ml_model/anti_spoof_trainer.py - Полностью исправленная версия
 
 import os
 import torch
@@ -157,13 +157,22 @@ class AntiSpoofTrainer:
         # Инициализируем устройство используя безопасный метод
         self.device = self._initialize_device(device)
 
-        self.batch_size = batch_size
+        # ИСПРАВЛЕНИЕ 1: Автоматическое уменьшение batch_size для экономии памяти
+        self.original_batch_size = batch_size
+        self.batch_size = min(batch_size, 8)  # Максимум 8 вместо 32
+        if batch_size > 8:
+            logger.warning(f"Reduced batch_size from {batch_size} to {self.batch_size} to save GPU memory")
+
         self.learning_rate = learning_rate
         self.num_epochs = num_epochs
         self.use_pretrained_rawnet = use_pretrained_rawnet
 
         # Параметры обработки аудио
         self.sample_rate = 16000
+
+        # ИСПРАВЛЕНИЕ 2: Добавляем проверку доступной памяти GPU
+        if self.device.type == 'cuda':
+            self._check_gpu_memory()
 
         # Статус задачи
         self.status = {
@@ -203,6 +212,33 @@ class AntiSpoofTrainer:
         # Используем CPU, если CUDA недоступна или с ней проблемы
         logger.info("Using CPU for computations")
         return torch.device("cpu")
+
+    def _check_gpu_memory(self):
+        """Проверяет доступную память GPU и корректирует параметры"""
+        try:
+            total_memory = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)  # GB
+            allocated_memory = torch.cuda.memory_allocated(0) / (1024 ** 3)  # GB
+            free_memory = total_memory - allocated_memory
+
+            logger.info(
+                f"GPU Memory: {allocated_memory:.1f}GB used / {total_memory:.1f}GB total / {free_memory:.1f}GB free")
+
+            # Если свободной памяти мало, еще больше уменьшаем batch_size
+            if free_memory < 2.0:  # Меньше 2GB свободно
+                self.batch_size = min(self.batch_size, 4)
+                logger.warning(
+                    f"Further reduced batch_size to {self.batch_size} due to limited GPU memory ({free_memory:.1f}GB free)")
+            elif free_memory < 1.0:  # Критически мало памяти
+                self.batch_size = 2
+                logger.warning(f"Critically low GPU memory, set batch_size to {self.batch_size}")
+
+        except Exception as e:
+            logger.warning(f"Could not check GPU memory: {e}")
+
+    def _clear_gpu_cache(self):
+        """Очищает кэш GPU для освобождения памяти"""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def _load_or_create_model(self) -> nn.Module:
         """
@@ -323,14 +359,16 @@ class AntiSpoofTrainer:
                 train_dataset,
                 batch_size=self.batch_size,
                 shuffle=True,
-                num_workers=2 if os.name != 'nt' else 0  # На Windows нужно 0
+                num_workers=2 if os.name != 'nt' else 0,  # На Windows нужно 0
+                pin_memory=False  # Отключаем pin_memory для экономии памяти
             )
 
             val_loader = DataLoader(
                 val_dataset,
                 batch_size=self.batch_size,
                 shuffle=False,
-                num_workers=2 if os.name != 'nt' else 0
+                num_workers=2 if os.name != 'nt' else 0,
+                pin_memory=False
             )
 
             logger.info(f"Prepared data loaders: {len(train_dataset)} training, {len(val_dataset)} validation samples")
@@ -422,13 +460,16 @@ class AntiSpoofTrainer:
 
     def train(self, task_id: str = None, progress_callback=None) -> Dict[str, Any]:
         """
-        Обучает модель защиты от спуфинга с улучшенной обработкой ошибок
+        Обучает модель защиты от спуфинга с улучшенной обработкой ошибок и управлением памятью
         """
         self.status["start_time"] = datetime.now().isoformat()
         self.status["status"] = "training"
         self.status["message"] = "Starting anti-spoofing model training"
 
         try:
+            # ИСПРАВЛЕНИЕ 3: Очищаем кэш GPU перед началом обучения
+            self._clear_gpu_cache()
+
             # Загрузка или создание модели
             model = self._load_or_create_model()
             model.train()
@@ -450,6 +491,9 @@ class AntiSpoofTrainer:
             patience_counter = 0
 
             for epoch in range(self.num_epochs):
+                # ИСПРАВЛЕНИЕ 4: Очищаем кэш GPU в начале каждой эпохи
+                self._clear_gpu_cache()
+
                 # Тренировочный цикл
                 model.train()
                 train_loss = 0.0
@@ -459,6 +503,10 @@ class AntiSpoofTrainer:
 
                 for batch_idx, (data, labels) in enumerate(train_loader):
                     try:
+                        # ИСПРАВЛЕНИЕ 5: Периодическая очистка кэша во время обучения
+                        if batch_idx % 5 == 0:
+                            self._clear_gpu_cache()
+
                         # Правильная подготовка данных в зависимости от типа модели
                         if is_rawnet:
                             # Для RawNet2: [batch_size, samples]
@@ -496,6 +544,10 @@ class AntiSpoofTrainer:
                         # Backward pass и оптимизация
                         optimizer.zero_grad()
                         loss.backward()
+
+                        # ИСПРАВЛЕНИЕ 6: Добавляем gradient clipping для стабильности
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
                         optimizer.step()
 
                         # Статистика
@@ -505,19 +557,39 @@ class AntiSpoofTrainer:
                         train_total += labels.size(0)
                         train_batches += 1
 
+                        # ИСПРАВЛЕНИЕ 7: Очищаем переменные для экономии памяти
+                        del waveforms, labels, outputs, loss
+                        if batch_idx % 3 == 0:
+                            self._clear_gpu_cache()
+
+                    except torch.cuda.OutOfMemoryError as oom_error:
+                        logger.error(f"CUDA OOM in training batch {batch_idx}: {oom_error}")
+                        logger.error(f"Data shape: {data.shape}, Labels shape: {labels.shape}")
+
+                        # Принудительная очистка памяти
+                        self._clear_gpu_cache()
+
+                        # Пропускаем этот батч и продолжаем
+                        continue
+
                     except Exception as batch_error:
                         logger.error(f"Error in training batch {batch_idx}: {batch_error}")
                         logger.error(f"Data shape: {data.shape}, Labels shape: {labels.shape}")
                         continue
 
-                if train_batches > 0:
-                    train_loss /= train_batches
-                    train_accuracy = train_correct / train_total * 100 if train_total > 0 else 0
-                else:
+                # Проверяем, были ли успешные батчи
+                if train_batches == 0:
                     logger.error("No successful training batches!")
-                    break
+                    # Прерываем обучение
+                    self.status["status"] = "error"
+                    self.status["message"] = "Training failed: No successful batches due to memory issues"
+                    self.status["end_time"] = datetime.now().isoformat()
+                    return self.status
 
-                # Валидация
+                train_loss /= train_batches
+                train_accuracy = train_correct / train_total * 100 if train_total > 0 else 0
+
+                # Валидация с улучшенной обработкой памяти
                 model.eval()
                 val_loss = 0.0
                 val_correct = 0
@@ -525,8 +597,12 @@ class AntiSpoofTrainer:
                 val_batches = 0
 
                 with torch.no_grad():
-                    for data, labels in val_loader:
+                    for batch_idx, (data, labels) in enumerate(val_loader):
                         try:
+                            # ИСПРАВЛЕНИЕ 8: Периодическая очистка памяти во время валидации
+                            if batch_idx % 3 == 0:
+                                self._clear_gpu_cache()
+
                             # Правильная подготовка данных для валидации
                             if is_rawnet:
                                 if data.dim() == 2:
@@ -566,8 +642,15 @@ class AntiSpoofTrainer:
                             val_total += labels.size(0)
                             val_batches += 1
 
+                            # Очищаем переменные
+                            del waveforms, labels, outputs, loss
+
+                        except torch.cuda.OutOfMemoryError:
+                            logger.warning(f"CUDA OOM in validation batch {batch_idx}, skipping")
+                            self._clear_gpu_cache()
+                            continue
                         except Exception as val_error:
-                            logger.error(f"Validation error: {val_error}")
+                            logger.error(f"Validation error in batch {batch_idx}: {val_error}")
                             continue
 
                 if val_batches > 0:
@@ -619,6 +702,9 @@ class AntiSpoofTrainer:
                     logger.info(f"Early stopping after {epoch + 1} epochs")
                     break
 
+                # ИСПРАВЛЕНИЕ 9: Принудительная очистка памяти в конце каждой эпохи
+                self._clear_gpu_cache()
+
             # Копирование лучшей модели в основную директорию
             try:
                 model_filename = "rawnet2_antispoof.pt" if is_rawnet else "anti_spoof_model.pt"
@@ -641,8 +727,10 @@ class AntiSpoofTrainer:
                 "best_val_loss": best_val_loss,
                 "best_val_accuracy": val_accuracy if 'val_accuracy' in locals() else 0.0,
                 "use_pretrained_rawnet": self.use_pretrained_rawnet,
-                "epochs_completed": epoch + 1,
-                "early_stopped": patience_counter >= patience
+                "epochs_completed": epoch + 1 if 'epoch' in locals() else 0,
+                "early_stopped": patience_counter >= patience,
+                "original_batch_size": self.original_batch_size,
+                "used_batch_size": self.batch_size
             }
 
             try:
@@ -667,7 +755,11 @@ class AntiSpoofTrainer:
             self.status["message"] = f"Error during anti-spoofing training: {str(e)}"
             self.status["end_time"] = datetime.now().isoformat()
             logger.error(f"Error during anti-spoofing training: {e}")
-            raise
+
+            # Очищаем память при ошибке
+            self._clear_gpu_cache()
+
+            return self.status
 
     def get_status(self) -> Dict[str, Any]:
         """
@@ -675,6 +767,5 @@ class AntiSpoofTrainer:
         """
         return self.status
 
-
-# Для обратной совместимости
-RawNet2AntiSpoofing = RawNet2AntiSpoofing
+# Для обратной совместимости - убираем дублирование
+# RawNet2AntiSpoofing уже импортирован из anti_spoof модуля

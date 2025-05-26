@@ -80,6 +80,9 @@
             border-top-right-radius: 10px !important;
             font-weight: 600;
         }
+        .main_head {
+            padding-top: 4.5rem !important;
+        }
     </style>
 </head>
 <body>
@@ -90,7 +93,7 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="d-flex align-items-center">
-                <span class="text-white me-2">{{ session.username }}</span>
+                <span class="text-white me-2">{{ username }}</span>
                 <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
             </div>
         </div>
@@ -130,7 +133,7 @@
                 </div>
             </nav>
 
-            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main_head">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">Add Users</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">

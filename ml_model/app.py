@@ -1352,7 +1352,7 @@ async def get_reinitialize_status():
 
 # Модифицируйте функцию переинициализации
 @app.post("/system/reinitialize")
-def reinitialize_system():
+async def reinitialize_system(background_tasks: BackgroundTasks):  # Добавлен параметр BackgroundTasks
     """Полная переинициализация системы"""
     global reinitialization_status
 
@@ -1402,8 +1402,9 @@ def reinitialize_system():
             "status": reinitialization_status
         }
 # Функция фонового выполнения
+
 async def perform_reinitialize():
-    global reinitialization_status, adaptive_threshold, SPOOFING_THRESHOLD
+    global reinitialization_status, user_embeddings
 
     try:
         # Шаг 1: Перезагрузка эмбеддингов
@@ -1421,19 +1422,19 @@ async def perform_reinitialize():
         reinitialization_status["progress"] = 0.5
         reinitialization_status["steps"][1]["status"] = "in_progress"
 
-        # Сброс порогов
-        adaptive_threshold = 0.5
-        SPOOFING_THRESHOLD = 0.7
+        # Здесь можно добавить сброс порогов если они есть в других модулях
 
         reinitialization_status["steps"][1]["status"] = "completed"
         reinitialization_status["steps"][1]["progress"] = 100
 
-        # Шаг 3: Очистка моделей (если нужно)
+        # Шаг 3: Очистка моделей
         reinitialization_status["last_status"] = "cleaning_up"
         reinitialization_status["progress"] = 0.8
         reinitialization_status["steps"][2]["status"] = "in_progress"
 
-        # Здесь можно добавить дополнительную очистку...
+        # Принудительная очистка CUDA кэша если доступно
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         reinitialization_status["steps"][2]["status"] = "completed"
         reinitialization_status["steps"][2]["progress"] = 100
@@ -1450,6 +1451,7 @@ async def perform_reinitialize():
         reinitialization_status["last_status"] = "error"
         reinitialization_status["error"] = str(e)
         reinitialization_status["end_time"] = datetime.now().isoformat()
+
 @app.post("/reset_embeddings")
 async def reset_embeddings():
     """Сброс всех эмбеддингов и повторная загрузка из файла"""
@@ -1605,16 +1607,16 @@ async def rebuild_user_embeddings(user_id: str = None):
         }
 
 
-@app.route('/model/status', methods=['GET'])
-def model_status():
+@app.get('/model/status')  # Изменено с @app.route на @app.get
+async def model_status():  # Добавлено async
     """Возвращает статус ML моделей"""
     try:
-        global model, anti_spoof_model, user_embeddings
+        global voice_model, anti_spoof_model, user_embeddings
 
         status = {
             "voice_model": {
-                "loaded": model is not None,
-                "type": type(model).__name__ if model else "Not loaded",
+                "loaded": voice_model is not None,
+                "type": type(voice_model).__name__ if voice_model else "Not loaded",
                 "users_count": len(user_embeddings) if user_embeddings else 0
             },
             "anti_spoof_model": {
@@ -1628,21 +1630,20 @@ def model_status():
             "system": {
                 "device": "GPU" if torch.cuda.is_available() else "CPU",
                 "memory_usage": get_memory_usage(),
-                "models_ready": (model is not None) and (anti_spoof_model is not None)
+                "models_ready": (voice_model is not None) and (anti_spoof_model is not None)
             }
         }
 
-        return jsonify(status)
+        return status
     except Exception as e:
         logger.error(f"Error getting model status: {e}")
-        return jsonify({
+        return {
             "error": str(e),
             "voice_model": {"loaded": False},
             "anti_spoof_model": {"loaded": False},
             "embeddings": {"total_users": 0, "total_embeddings": 0},
             "system": {"models_ready": False}
-        }), 500
-
+        }, 500
 
 def get_memory_usage():
     """Получает информацию об использовании памяти"""

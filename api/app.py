@@ -284,7 +284,6 @@ async def call_ml_service(method, endpoint=None, json=None):
 
             raise HTTPException(status_code=500, detail=f"Error communicating with ML service: {str(e)}")
 
-
 # Аудио сервис
 async def call_audio_processor(endpoint, data=None, file=None):
     async with httpx.AsyncClient() as client:
@@ -415,7 +414,6 @@ async def system_status(db=Depends(get_db)):
             "timestamp": datetime.now().isoformat()
         }
 
-
 async def get_today_statistics(db):
     """Получает статистику событий за сегодня"""
     try:
@@ -471,7 +469,6 @@ async def get_today_statistics(db):
             "spoofing_attempts": 0,
             "total_events": 0
         }
-
 
 def get_system_resources():
     """Получает информацию о системных ресурсах"""
@@ -535,7 +532,6 @@ def get_system_resources():
             "uptime": "unknown",
             "device": "Unknown"
         }
-
 
 async def get_model_status():
     """Получает статус ML моделей"""

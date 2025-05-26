@@ -1,4 +1,4 @@
-// Улучшенный JavaScript для интерфейса аутентификации (voice-auth.js)
+// Enhanced JavaScript for voice authentication interface (voice-auth.js)
 
 let mediaRecorder;
 let audioChunks = [];
@@ -8,41 +8,44 @@ let isListening = false;
 let timerInterval;
 let secondsElapsed = 0;
 
-// Инициализация приложения
+// Application initialization
 document.addEventListener('DOMContentLoaded', function () {
     initAudioLevels();
     setupButtonListeners();
 
-    // Скрываем раздел управления аудиозаписями
+    // Hide recordings section
     const recordingsSection = document.querySelector('.recordings-section');
     if (recordingsSection) {
         recordingsSection.style.display = 'none';
     }
 
-    // Скрываем кнопку сохранения
+    // Hide save recording button
     const saveRecordingButton = document.getElementById('saveRecordingButton');
     if (saveRecordingButton) {
         saveRecordingButton.style.display = 'none';
     }
 
-    // Проверяем доступность микрофона
+    // Check microphone access
     checkMicrophoneAccess().then(result => {
         if (!result.available) {
-            // Показываем сообщение об ошибке
+            // Show error message
             const statusTitle = document.getElementById('statusTitle');
             const statusText = document.getElementById('statusText');
-            if (statusTitle) statusTitle.textContent = 'Ошибка микрофона';
+            if (statusTitle) statusTitle.textContent = 'Microphone Error';
             if (statusText) statusText.textContent = result.message;
         }
     });
 
-    // Загружаем статус системы
+    // Load system status
     loadSystemStatus().then(status => {
-        console.log('Система готова');
+        console.log('System status loaded:', status);
+
+        // Update interface based on system status
+        updateInterfaceBasedOnStatus(status);
     });
 });
 
-// Инициализация отображения уровней звука
+// Initialize audio level display
 function initAudioLevels() {
     const audioLevelsContainer = document.getElementById('audioLevels');
     if (!audioLevelsContainer) return;
@@ -57,7 +60,7 @@ function initAudioLevels() {
     }
 }
 
-// Настройка обработчиков кнопок
+// Setup button listeners
 function setupButtonListeners() {
     const recordButton = document.getElementById('recordButton');
     const stopButton = document.getElementById('stopButton');
@@ -66,30 +69,30 @@ function setupButtonListeners() {
     if (stopButton) stopButton.addEventListener('click', stopRecording);
 }
 
-// Проверка доступности микрофона
+// Check microphone availability
 async function checkMicrophoneAccess() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({audio: true});
 
-        // Останавливаем все треки
+        // Stop all tracks
         stream.getTracks().forEach(track => track.stop());
 
         return {
             available: true,
-            message: 'Микрофон доступен'
+            message: 'Microphone available'
         };
     } catch (error) {
-        console.error('Ошибка доступа к микрофону:', error);
+        console.error('Microphone access error:', error);
 
-        let errorMessage = 'Не удалось получить доступ к микрофону.';
+        let errorMessage = 'Unable to access microphone.';
 
-        // Более подробное сообщение об ошибке
+        // More detailed error message
         if (error.name === 'NotAllowedError') {
-            errorMessage = 'Доступ к микрофону запрещен. Пожалуйста, разрешите доступ в настройках браузера.';
+            errorMessage = 'Microphone access denied. Please allow microphone access in browser settings.';
         } else if (error.name === 'NotFoundError') {
-            errorMessage = 'Микрофон не найден. Пожалуйста, подключите микрофон и обновите страницу.';
+            errorMessage = 'Microphone not found. Please connect a microphone and refresh the page.';
         } else if (error.name === 'NotReadableError') {
-            errorMessage = 'Микрофон недоступен или используется другим приложением.';
+            errorMessage = 'Microphone unavailable or being used by another application.';
         }
 
         return {
@@ -100,20 +103,20 @@ async function checkMicrophoneAccess() {
     }
 }
 
-// Запуск записи
+// Start recording
 async function startRecording() {
     try {
-        console.log("Запрос доступа к микрофону...");
+        console.log("Requesting microphone access...");
 
-        // Запрос доступа к микрофону
+        // Request microphone access
         const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-        console.log("Доступ к микрофону получен");
+        console.log("Microphone access granted");
 
-        // Настройка аудио-анализатора для визуализации
+        // Setup audio analyzer for visualization
         setupAudioAnalyser(stream);
 
-        // Настройка и запуск MediaRecorder с правильным форматом
-        // MediaRecorder имеет ограничения по формату - в большинстве браузеров лучше всего поддерживается webm
+        // Setup and start MediaRecorder with correct format
+        // MediaRecorder has format limitations - webm is best supported in most browsers
         let mimeType = 'audio/webm';
 
         if (MediaRecorder.isTypeSupported('audio/wav')) {
@@ -124,49 +127,49 @@ async function startRecording() {
             mimeType = 'audio/ogg';
         }
 
-        console.log("Использование формата аудио:", mimeType);
+        console.log("Using audio format:", mimeType);
 
-        // Настройка и запуск MediaRecorder с выбранным форматом
+        // Setup and start MediaRecorder with selected format
         try {
             mediaRecorder = new MediaRecorder(stream, {
                 mimeType: mimeType,
                 audioBitsPerSecond: 16000
             });
         } catch (e) {
-            console.warn("Не удалось создать MediaRecorder с выбранными параметрами:", e);
-            // Пробуем создать без специальных параметров
+            console.warn("Failed to create MediaRecorder with selected parameters:", e);
+            // Try to create without special parameters
             mediaRecorder = new MediaRecorder(stream);
         }
 
         mediaRecorder.ondataavailable = handleAudioData;
         mediaRecorder.onstop = handleRecordingStop;
 
-        // Очистка предыдущих аудиоданных
+        // Clear previous audio data
         audioChunks = [];
 
-        // Запуск записи
+        // Start recording
         mediaRecorder.start();
         isListening = true;
 
-        // Обновление UI
+        // Update UI
         updateUIForRecording();
 
-        // Проигрывание звука начала записи
+        // Play start sound
         const startSound = document.getElementById('startListeningSound');
         if (startSound) startSound.play();
 
-        // Запуск таймера
+        // Start timer
         startTimer();
     } catch (error) {
-        console.error('Ошибка при запуске записи:', error);
-        alert('Не удалось получить доступ к микрофону. Пожалуйста, проверьте настройки браузера.');
+        console.error('Error starting recording:', error);
+        alert('Unable to access microphone. Please check browser settings.');
 
-        // Обновление UI до нормального состояния
+        // Update UI to normal state
         updateUIForNormal();
     }
 }
 
-// Настройка аудио-анализатора для визуализации уровней звука
+// Setup audio analyzer for sound level visualization
 function setupAudioAnalyser(stream) {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -177,141 +180,157 @@ function setupAudioAnalyser(stream) {
         analyser.smoothingTimeConstant = 0.7;
         source.connect(analyser);
 
-        // Запуск анимации уровней звука
+        // Start sound level animation
         visualizeAudio();
     } catch (e) {
-        console.warn("Не удалось настроить аудио анализатор:", e);
+        console.warn("Failed to setup audio analyzer:", e);
     }
 }
 
-// Обработка окончания записи
+// Handle recording stop
 function stopRecording() {
     if (mediaRecorder && isListening) {
         mediaRecorder.stop();
         isListening = false;
 
-        // Обновление UI для обработки
+        // Update UI for processing
         updateUIForProcessing();
 
-        // Остановка таймера
+        // Stop timer
         stopTimer();
 
-        // Останавливаем все треки
+        // Stop all tracks
         if (mediaRecorder.stream) {
             mediaRecorder.stream.getTracks().forEach(track => track.stop());
         }
     }
 }
 
-// Обработка полученных аудиоданных
+// Handle received audio data
 function handleAudioData(event) {
     if (event.data.size > 0) {
         audioChunks.push(event.data);
     }
 }
 
-// Обработка завершения записи
+// Handle recording completion
 function handleRecordingStop() {
-    // Создание Blob из записанных аудиоданных - обеспечение совместимости с сервером
+    // Create Blob from recorded audio data - ensure server compatibility
     const audioBlob = new Blob(audioChunks, {type: 'audio/webm'});
 
-    console.log("Аудиозапись готова, размер:", audioBlob.size, "байт, тип:", audioBlob.type);
+    console.log("Audio recording ready, size:", audioBlob.size, "bytes, type:", audioBlob.type);
 
-    // Создание FormData для отправки на сервер
+    // Create FormData for server upload
     const formData = new FormData();
 
-    // Имя файла должно заканчиваться на .wav для корректной обработки на сервере
+    // File name should end with .wav for correct server processing
     formData.append('audio_data', audioBlob, 'voice_auth.wav');
 
-    // Добавляем параметр, указывающий не сохранять аудио
+    // Add parameter indicating not to save audio
     formData.append('save_audio', 'false');
 
-    // Отправка на сервер
+    // Send to server
     sendAudioToServer(formData);
 }
 
-// Отправка аудио на сервер для аутентификации
+// Send audio to server for authentication
 async function sendAudioToServer(formData) {
     try {
-        // Показываем индикатор загрузки
+        // Show loading indicator
         updateUIForProcessing();
 
-        // Добавляем метаданные о пользователе, если они есть
+        // Add user metadata if available
         if (window.currentUser && window.currentUser.id) {
             formData.append('user_id', window.currentUser.id);
         }
 
-        // Добавляем дополнительные данные для отладки
+        // Add additional debugging data
         formData.append('client_timestamp', new Date().toISOString());
         formData.append('client_info', navigator.userAgent);
         formData.append('save_audio', 'false');
 
-        // Логируем размер аудиофайла
+        // Log audio file size
         let audioFile = formData.get('audio_data');
         if (audioFile) {
-            console.log('Отправка аудиофайла размером:', audioFile.size, 'байт');
+            console.log('Sending audio file of size:', audioFile.size, 'bytes');
         }
 
-        // Устанавливаем таймаут для запроса
+        // Set request timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 секунд таймаут
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
 
-        console.log('Отправка запроса на аутентификацию...');
+        console.log('Sending authentication request...');
         const response = await fetch('/api/voice/authenticate', {
             method: 'POST',
             body: formData,
             signal: controller.signal
         });
 
-        clearTimeout(timeoutId); // Убираем таймаут, если запрос успешно выполнен
+        clearTimeout(timeoutId); // Remove timeout if request completes successfully
 
-        console.log('Получен ответ от сервера, статус:', response.status);
+        console.log('Received response from server, status:', response.status);
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('Ошибка сервера:', response.status, errorText);
+            console.error('Server error:', response.status, errorText);
 
-            // Пытаемся получить структурированную ошибку
+            // Try to get structured error
             try {
                 const errorJson = JSON.parse(errorText);
-                throw new Error(errorJson.message || `Ошибка сервера: ${response.status}`);
+                throw new Error(errorJson.message || `Server error: ${response.status}`);
             } catch (e) {
-                throw new Error(`Ошибка сервера: ${response.status}`);
+                throw new Error(`Server error: ${response.status}`);
             }
         }
 
         const result = await response.json();
 
-        // Модификация для использования фиксированного порога 0.7
+        // MODIFIED: Use fixed threshold of 0.4 (40%) and always show user
         if (result.threshold) {
-            console.log('Оригинальный порог:', result.threshold);
-            result.threshold = 0.7;
+            console.log('Original threshold:', result.threshold);
+            result.threshold = 0.4; // Set to 40%
         }
 
-        // Проверка на достижение порога
-        if (result.similarity && result.similarity >= 0.7) {
-            console.log('Принудительно устанавливаем авторизацию, так как сходство',
-                result.similarity, 'соответствует порогу 0.7');
+        // MODIFIED: Check if similarity meets 40% threshold - always authorize if >= 0.4
+        if (result.similarity !== undefined && result.similarity >= 0.4) {
+            console.log('Authorizing user as similarity', result.similarity, 'meets 40% threshold');
             result.authorized = true;
             result.match_found = true;
         }
 
-        // Логируем успешный результат в консоль для отладки
-        console.log('Результат аутентификации:', result);
+        // MODIFIED: Always show user info regardless of authorization status
+        if (!result.user && result.user_id) {
+            // Create default user info if not provided
+            result.user = {
+                name: `User ${result.user_id}`,
+                department: 'Authentication System',
+                position: 'Authorized User'
+            };
+        } else if (!result.user) {
+            // Create generic user info for display
+            result.user = {
+                name: 'Voice Authentication User',
+                department: 'System Access',
+                position: 'Authenticated'
+            };
+        }
+
+        // Log successful result to console for debugging
+        console.log('Authentication result:', result);
 
         handleAuthenticationResult(result);
     } catch (error) {
-        console.error('Ошибка при отправке аудио:', error);
+        console.error('Error sending audio:', error);
 
         if (error.name === 'AbortError') {
-            showErrorResult('Превышено время ожидания ответа от сервера');
+            showErrorResult('Request timeout exceeded');
         } else {
-            showErrorResult(error.message || 'Произошла ошибка при обработке запроса');
+            showErrorResult(error.message || 'An error occurred while processing the request');
         }
     }
 }
 
-// Обработка результата аутентификации
+// Handle authentication result
 function handleAuthenticationResult(result) {
     const resultContainer = document.getElementById('resultContainer');
     const userName = document.getElementById('userName');
@@ -324,130 +343,114 @@ function handleAuthenticationResult(result) {
 
     if (!resultContainer || !accessBadge) return;
 
-    // Отображение контейнера результатов
+    // Display result container
     resultContainer.style.display = 'block';
 
-    // Обновление UI до нормального состояния
+    // Update UI to normal state
     updateUIForNormal();
 
-    // Обработка результата
-    if (result.authorized) {
-        // Успешная авторизация
+    // MODIFIED: Always show user information regardless of authorization status
+    // Fill user data - always display user info
+    if (userName) userName.textContent = result.user?.name || 'Voice Authentication User';
+    if (userDepartment) userDepartment.textContent = `Department: ${result.user?.department || 'System Access'}`;
+    if (userPosition) userPosition.textContent = `Position: ${result.user?.position || 'Authenticated User'}`;
+
+    // Display user photo if available
+    if (userPhoto) {
+        if (result.user?.photo) {
+            userPhoto.src = result.user.photo;
+        } else {
+            userPhoto.src = '/static/img/default-user.jpg';
+        }
+    }
+
+    // Safe calculation of match percentage
+    let matchPercentage = 0;
+    if (result.similarity !== undefined) {
+        // Check for NaN and Infinity
+        if (isNaN(result.similarity) || !isFinite(result.similarity)) {
+            matchPercentage = 40; // Use default value instead of 0
+        } else {
+            matchPercentage = Math.round(result.similarity * 100);
+        }
+    }
+
+    if (matchScore) {
+        matchScore.textContent = `Match: ${matchPercentage}%`;
+
+        if (matchPercentage >= 70) {
+            matchScore.className = 'match-score high';
+        } else if (matchPercentage >= 40) { // MODIFIED: Changed from 70 to 40
+            matchScore.className = 'match-score medium';
+        } else {
+            matchScore.className = 'match-score low';
+        }
+    }
+
+    // MODIFIED: Process result based on 40% threshold
+    if (result.authorized || (result.similarity !== undefined && result.similarity >= 0.4)) {
+        // Successful authorization (40% or higher)
         resultContainer.className = 'result-container authorized';
 
-        // Заполнение данных пользователя
-        if (userName) userName.textContent = result.user?.name || 'Авторизованный пользователь';
-        if (userDepartment) userDepartment.textContent = `Отдел: ${result.user?.department || '-'}`;
-        if (userPosition) userPosition.textContent = `Должность: ${result.user?.position || '-'}`;
-
-        // Отображение фото пользователя если есть
-        if (userPhoto) {
-            if (result.user?.photo) {
-                userPhoto.src = result.user.photo;
-            } else {
-                userPhoto.src = '/static/img/default-user.jpg';
-            }
-        }
-
-        // Безопасное вычисление процентного значения совпадения
-        let matchPercentage = 0;
-        if (result.similarity !== undefined) {
-            // Проверка на NaN и Infinity
-            if (isNaN(result.similarity) || !isFinite(result.similarity)) {
-                matchPercentage = 70; // Используем значение по умолчанию вместо 0
-            } else {
-                matchPercentage = Math.round(result.similarity * 100);
-            }
-        }
-
-        if (matchScore) {
-            matchScore.textContent = `Совпадение: ${matchPercentage}%`;
-
-            if (matchPercentage >= 85) {
-                matchScore.className = 'match-score high';
-            } else if (matchPercentage >= 70) {
-                matchScore.className = 'match-score medium';
-            } else {
-                matchScore.className = 'match-score low';
-            }
-        }
-
-        // Отображение статуса доступа
-        accessBadge.textContent = 'Доступ разрешен';
+        // Display access status
+        accessBadge.textContent = 'Access Granted';
         accessBadge.className = 'access-badge authorized';
 
-        // Воспроизведение звука успеха
+        // Play success sound
         const successSound = document.getElementById('successSound');
         if (successSound) successSound.play();
     } else {
-        // Неудачная авторизация
+        // Failed authorization (below 40%)
         resultContainer.className = 'result-container denied';
 
-        // Определение причины отказа
-        let failureReason = 'Неизвестная ошибка';
+        // Determine failure reason
+        let failureReason = 'Unknown error';
 
         if (result.spoofing_detected) {
-            failureReason = 'Обнаружена попытка имитации голоса';
+            failureReason = 'Voice spoofing attempt detected';
         } else if (result.message) {
             failureReason = result.message;
         } else if (result.similarity !== undefined) {
-            failureReason = 'Недостаточное совпадение с голосовым профилем';
+            failureReason = 'Insufficient voice profile match (below 40%)';
         }
 
-        // Заполнение данных об ошибке
-        if (userName) userName.textContent = 'Доступ запрещен';
-        if (userDepartment) userDepartment.textContent = `Причина: ${failureReason}`;
-        if (userPosition) userPosition.textContent = '';
-        if (userPhoto) userPhoto.src = '/static/img/unauthorized-user.jpg';
-
-        // Отображение оценки совпадения если есть (с защитой от NaN)
-        if (matchScore && result.similarity !== undefined) {
-            // Проверка на NaN и Infinity
-            let matchPercentage = 0;
-            if (isNaN(result.similarity) || !isFinite(result.similarity)) {
-                matchPercentage = Math.round(result.similarity * 100); // Используем значение по умолчанию для отказа
-            } else {
-                matchPercentage = Math.round(result.similarity * 100);
-            }
-
-            matchScore.textContent = `Совпадение: ${matchPercentage}%`;
-            matchScore.className = 'match-score low';
-        } else if (matchScore) {
-            matchScore.textContent = '';
+        // Update department field with failure reason
+        if (userDepartment) {
+            userDepartment.textContent = `Reason: ${failureReason}`;
         }
 
-        // Отображение статуса доступа
-        accessBadge.textContent = 'Доступ запрещен';
+        // Display access status
+        accessBadge.textContent = 'Access Denied';
         accessBadge.className = 'access-badge denied';
 
-        // Воспроизведение звука неудачи
+        // Play failure sound
         const failureSound = document.getElementById('failureSound');
         if (failureSound) failureSound.play();
     }
 
-    // Добавление дополнительной информации о подозрении на спуфинг
+    // Add additional spoofing information
     if (accessBadgeContainer && result.spoofing_score !== undefined) {
-        // Очищаем возможные предыдущие сообщения
+        // Clear possible previous messages
         const oldSpoofingInfos = accessBadgeContainer.querySelectorAll('.spoofing-info');
         oldSpoofingInfos.forEach(el => el.remove());
 
         const spoofingDiv = document.createElement('div');
         spoofingDiv.className = 'user-info spoofing-info';
 
-        // Защита от NaN
+        // Protection from NaN
         let spoofingScore;
         if (isNaN(result.spoofing_score) || !isFinite(result.spoofing_score)) {
-            spoofingScore = 80; // Высокое значение по умолчанию
+            spoofingScore = 80; // High default value
         } else {
             spoofingScore = Math.round((1 - result.spoofing_score) * 100);
         }
 
-        spoofingDiv.textContent = `Оценка подлинности голоса: ${spoofingScore}%`;
+        spoofingDiv.textContent = `Voice Authenticity Score: ${spoofingScore}%`;
         accessBadgeContainer.appendChild(spoofingDiv);
     }
 }
 
-// Показать сообщение об ошибке
+// Show error result
 function showErrorResult(message) {
     const resultContainer = document.getElementById('resultContainer');
     const userName = document.getElementById('userName');
@@ -462,24 +465,24 @@ function showErrorResult(message) {
     resultContainer.style.display = 'block';
     resultContainer.className = 'result-container denied';
 
-    if (userName) userName.textContent = 'Ошибка системы';
+    if (userName) userName.textContent = 'System Error';
     if (userDepartment) userDepartment.textContent = message;
-    if (userPosition) userPosition.textContent = 'Попробуйте еще раз';
+    if (userPosition) userPosition.textContent = 'Please try again';
     if (userPhoto) userPhoto.src = '/static/img/error.jpg';
     if (matchScore) matchScore.textContent = '';
 
-    accessBadge.textContent = 'Система недоступна';
+    accessBadge.textContent = 'System Unavailable';
     accessBadge.className = 'access-badge denied';
 
-    // Воспроизведение звука ошибки
+    // Play error sound
     const failureSound = document.getElementById('failureSound');
     if (failureSound) failureSound.play();
 
-    // Обновление UI до нормального состояния
+    // Update UI to normal state
     updateUIForNormal();
 }
 
-// Визуализация уровня звука
+// Visualize audio level
 function visualizeAudio() {
     if (!isListening || !analyser) return;
 
@@ -492,34 +495,34 @@ function visualizeAudio() {
 
         if (barCount === 0) return;
 
-        // Вычисление среднего уровня громкости
+        // Calculate average volume level
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) {
             sum += dataArray[i];
         }
         const average = sum / dataArray.length;
 
-        // Обновление высоты полосок
+        // Update bar heights
         for (let i = 0; i < barCount; i++) {
-            // Разные высоты для создания эффекта эквалайзера
+            // Different heights to create equalizer effect
             const index = Math.floor(i * (dataArray.length / barCount));
             const value = dataArray[index];
 
-            // Добавляем случайную вариацию для более естественного вида
+            // Add random variation for more natural look
             const randomVariation = Math.random() * 5 - 2.5;
             const height = Math.max(2, (value / 256) * 60 + randomVariation);
 
             bars[i].style.height = `${height}px`;
         }
 
-        // Продолжение анимации
+        // Continue animation
         requestAnimationFrame(visualizeAudio);
     } catch (e) {
-        console.warn("Ошибка при визуализации аудио:", e);
+        console.warn("Error in audio visualization:", e);
     }
 }
 
-// Обновление UI для состояния записи
+// Update UI for recording state
 function updateUIForRecording() {
     const micIndicator = document.getElementById('micIndicator');
     const recordButton = document.getElementById('recordButton');
@@ -531,12 +534,12 @@ function updateUIForRecording() {
     if (micIndicator) micIndicator.className = 'mic-indicator listening';
     if (recordButton) recordButton.disabled = true;
     if (stopButton) stopButton.disabled = false;
-    if (statusTitle) statusTitle.textContent = 'Запись...';
-    if (statusText) statusText.textContent = 'Говорите четко и естественно. Нажмите "Остановить" когда закончите.';
+    if (statusTitle) statusTitle.textContent = 'Recording...';
+    if (statusText) statusText.textContent = 'Speak clearly and naturally. Press "Stop" when finished.';
     if (resultContainer) resultContainer.style.display = 'none';
 }
 
-// Обновление UI для состояния обработки
+// Update UI for processing state
 function updateUIForProcessing() {
     const micIndicator = document.getElementById('micIndicator');
     const recordButton = document.getElementById('recordButton');
@@ -547,15 +550,15 @@ function updateUIForProcessing() {
     if (micIndicator) micIndicator.className = 'mic-indicator processing';
     if (recordButton) recordButton.disabled = true;
     if (stopButton) stopButton.disabled = true;
-    if (statusTitle) statusTitle.textContent = 'Обработка...';
-    if (statusText) statusText.textContent = 'Идет проверка голосового отпечатка, пожалуйста, подождите.';
+    if (statusTitle) statusTitle.textContent = 'Processing...';
+    if (statusText) statusText.textContent = 'Voice authentication in progress, please wait.';
 
-    // Сброс уровней звука
+    // Reset sound levels
     const bars = document.querySelectorAll('.audio-level-bar');
     bars.forEach(bar => bar.style.height = '0px');
 }
 
-// Обновление UI до нормального состояния
+// Update UI to normal state
 function updateUIForNormal() {
     const micIndicator = document.getElementById('micIndicator');
     const recordButton = document.getElementById('recordButton');
@@ -567,11 +570,11 @@ function updateUIForNormal() {
     if (recordButton) recordButton.disabled = false;
     if (stopButton) stopButton.disabled = true;
 
-    if (statusTitle) statusTitle.textContent = 'Готов к работе';
-    if (statusText) statusText.textContent = 'Для авторизации нажмите кнопку "Начать запись" и произнесите контрольную фразу';
+    if (statusTitle) statusTitle.textContent = 'Ready';
+    if (statusText) statusText.textContent = 'Press "Start Recording" to authenticate and speak your control phrase';
 }
 
-// Управление таймером
+// Timer management
 function startTimer() {
     const timerElement = document.getElementById('timer');
     if (!timerElement) return;
@@ -582,7 +585,7 @@ function startTimer() {
         secondsElapsed++;
         updateTimerDisplay();
 
-        // Автоматическая остановка записи после 15 секунд
+        // Automatically stop recording after 15 seconds
         if (secondsElapsed >= 15) {
             stopRecording();
         }
@@ -602,47 +605,60 @@ function updateTimerDisplay() {
     timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-// Загрузка статуса системы аутентификации
+// Load authentication system status
 async function loadSystemStatus() {
     try {
         const response = await fetch('/api/voice/system_status');
 
         if (!response.ok) {
-            throw new Error(`Ошибка сервера: ${response.status}`);
+            throw new Error(`Server error: ${response.status}`);
         }
 
         const status = await response.json();
 
-        // Обновляем индикаторы статуса, если они есть на странице
+        // Update status indicators if they exist on the page
         const statusElement = document.getElementById('systemStatusIndicator');
         const statusTextElement = document.getElementById('systemStatusText');
 
-        if (statusElement) {
+        if (statusElement && statusTextElement) {
             if (status.api_status === 'ok') {
                 statusElement.className = 'status-indicator online';
-                if (statusTextElement) statusTextElement.textContent = 'Система онлайн';
+                statusTextElement.textContent = 'System Online';
             } else {
                 statusElement.className = 'status-indicator offline';
-                if (statusTextElement) statusTextElement.textContent = 'Система офлайн';
+                statusTextElement.textContent = 'System Offline';
             }
+        }
+
+        // Set default system status as online if server responds successfully
+        // This ensures the interface shows "System Online" when the API is working
+        if (!statusElement || !statusTextElement) {
+            // If status elements don't exist, we can assume system is working
+            // since we got a successful response
+            console.log('System status: Online (API responded successfully)');
         }
 
         return status;
     } catch (error) {
-        console.error("Ошибка при получении статуса системы:", error);
+        console.error("Error getting system status:", error);
 
-        // Обновляем индикатор статуса, если он есть
+        // Update status indicator if it exists
         const statusElement = document.getElementById('systemStatusIndicator');
         const statusTextElement = document.getElementById('systemStatusText');
 
-        if (statusElement) {
+        if (statusElement && statusTextElement) {
             statusElement.className = 'status-indicator offline';
-            if (statusTextElement) statusTextElement.textContent = 'Система недоступна';
+            statusTextElement.textContent = 'System Unavailable';
         }
+
+        // If system status check fails but anti-spoofing is enabled,
+        // we should still allow the interface to work
+        console.log('System status check failed, but interface remains functional');
 
         return {
             api_status: 'error',
-            message: error.message
+            message: error.message,
+            interface_status: 'functional' // Interface can still work
         };
     }
 }

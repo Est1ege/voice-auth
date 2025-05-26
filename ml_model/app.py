@@ -1672,6 +1672,79 @@ def get_memory_usage():
         return {"error": str(e)}
 
 
+@app.post("/training/{task_id}/deploy")
+async def deploy_trained_model(task_id: str):
+    """Развертывает обученную модель в production"""
+    global training_manager, voice_model, anti_spoof_model
+
+    if training_manager is None:
+        raise HTTPException(status_code=500, detail="Training manager not initialized")
+
+    try:
+        # Получаем статус задачи
+        task_status = training_manager.get_task_status(task_id)
+
+        if not task_status:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        if task_status.get("status") != "completed":
+            raise HTTPException(status_code=400, detail=f"Task {task_id} is not completed yet")
+
+        task_type = task_status.get("type")
+
+        if task_type == "voice_model":
+            # Развертывание голосовой модели
+            model_path = os.path.join(MODEL_PATH, "voice_classification_model.pt")
+            if os.path.exists(model_path):
+                # Перезагружаем голосовую модель
+                voice_model = VoiceEmbeddingModel(
+                    model_path=os.path.join(MODEL_PATH, "voice_embedding_model"),
+                    device=device
+                )
+                logger.info(f"Deployed voice model from task {task_id}")
+                return {
+                    "success": True,
+                    "message": f"Voice model from task {task_id} deployed successfully",
+                    "model_type": "voice_model"
+                }
+            else:
+                raise HTTPException(status_code=404, detail="Trained model file not found")
+
+        elif task_type == "anti_spoof":
+            # Развертывание анти-спуфинг модели
+            model_files = ["rawnet2_antispoof.pt", "anti_spoof_model.pt"]
+            deployed = False
+
+            for model_file in model_files:
+                model_path = os.path.join(MODEL_PATH, model_file)
+                if os.path.exists(model_path):
+                    # Перезагружаем анти-спуфинг модель
+                    anti_spoof_model = AntiSpoofingDetector(
+                        model_path=MODEL_PATH,
+                        device=device
+                    )
+                    logger.info(f"Deployed anti-spoof model from task {task_id}")
+                    deployed = True
+                    break
+
+            if deployed:
+                return {
+                    "success": True,
+                    "message": f"Anti-spoof model from task {task_id} deployed successfully",
+                    "model_type": "anti_spoof"
+                }
+            else:
+                raise HTTPException(status_code=404, detail="Trained anti-spoof model file not found")
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown task type: {task_type}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deploying model from task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Запуск сервера для локальной разработки
 if __name__ == "__main__":
     import uvicorn

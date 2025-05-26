@@ -853,7 +853,7 @@ async def authorize_user(
 
             # Порог сходства для авторизации (можно настроить)
             settings = await db.settings.find_one({"type": "system_settings"})
-            similarity_threshold = settings.get("voice_similarity_threshold", 0.75) if settings else 0.75
+            similarity_threshold = settings.get("voice_similarity_threshold", 0.4) if settings else 0.4
 
             logger.info(
                 f"Match result: user_id={matched_user_id}, similarity={similarity}, threshold={similarity_threshold}")

@@ -298,6 +298,12 @@ async function sendAudioToServer(formData) {
             result.match_found = true;
         }
 
+        // ДОПОЛНИТЕЛЬНО: Всегда показываем лучшего кандидата если similarity >= 0.3 (30%)
+        if (result.similarity !== undefined && result.similarity >= 0.3 && !result.user) {
+            console.log('Showing user info for similarity', result.similarity, 'above 30% threshold');
+            result.show_user_info = true;
+        }
+
         // MODIFIED: Always show user info regardless of authorization status
         if (!result.user && result.user_id) {
             // Create default user info if not provided

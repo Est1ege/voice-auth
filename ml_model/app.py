@@ -958,7 +958,7 @@ async def match_user_detailed(request: dict):
 
         # Динамически определяем порог в зависимости от количества пользователей
         # Используем более высокий порог для избежания ложных срабатываний
-        adaptive_threshold = max(0.5, min(0.75, 0.45 + 0.02 * len(user_embeddings)))
+        adaptive_threshold = max(0.35, min(0.5, 0.3 + 0.01 * len(user_embeddings)))
         logger.info(f"Using adaptive threshold: {adaptive_threshold:.2f} for {len(user_embeddings)} users")
 
         # Создаем словарь для хранения данных о совпадениях по пользователям

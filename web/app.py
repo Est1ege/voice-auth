@@ -1966,7 +1966,7 @@ def voice_authenticate_proxy():
                 response = requests.post(
                     f"{API_URL}/api/authorize",
                     files=files,
-                    timeout=10  # Таймаут для предотвращения зависания
+                    timeout=30  # Таймаут для предотвращения зависания
                 )
 
             # 10. Проверка ответа API

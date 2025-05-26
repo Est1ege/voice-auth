@@ -124,11 +124,6 @@
                                 <i class="bi bi-gear"></i> System Status
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
-                                <i class="bi bi-mic"></i> Auth Monitor
-                            </a>
-                        </li>
                     </ul>
                 </div>
             </nav>
@@ -296,7 +291,7 @@
                             </div>
                             <div class="card-body">
                                 <div class="d-grid gap-2">
-                                    <a href="{{ url_for('add_user') }}" class="btn btn-primary">
+                                    <a href="{{ url_for('simple_add_user') }}" class="btn btn-primary">
                                         <i class="bi bi-person-plus"></i> Add New User
                                     </a>
                                     <a href="{{ url_for('manage_users') }}" class="btn btn-outline-primary">

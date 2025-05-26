@@ -147,10 +147,6 @@
                     </div>
                 </div>
 
-                <a href="{{ url_for('filesystem_diagnosis') }}" class="btn btn-info mb-4">
-                    <i class="bi bi-hdd-rack"></i> File System Diagnostics
-                </a>
-
                 <div class="row mb-4">
                     <!-- API Service Status -->
                     <div class="col-md-3 mb-4">
@@ -333,13 +329,6 @@
                                                 </div>
                                             </li>
                                             <li class="list-group-item">
-                                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                                    <span>ML Models:</span>
-                                                    <small>{{ status.storage.ml_used }} / {{ status.storage.ml_total }}</small>
-                                                </div>
-                                                <div class="progress resource-usage">
-                                                    <div class="progress-bar {% if status.storage.ml_percent > 15 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ status.storage.ml_percent }}%" aria-valuenow="{{ status.storage.ml_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
-                                                </div>
                                             </li>
                                         </ul>
                                     </div>
@@ -389,75 +378,6 @@
                     </div>
                 </div>
 
-                <!-- Backup System -->
-                <div class="card shadow mb-4">
-                    <div class="card-header bg-dark text-white">
-                        <h5 class="mb-0"><i class="bi bi-save"></i> Backups</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-7">
-                                <div class="table-responsive">
-                                    <table class="table table-striped">
-                                        <thead>
-                                            <tr>
-                                                <th>Creation Date</th>
-                                                <th>Type</th>
-                                                <th>Size</th>
-                                                <th>Status</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for backup in status.backups %}
-                                            <tr>
-                                                <td>{{ backup.date }}</td>
-                                                <td>{{ backup.type }}</td>
-                                                <td>{{ backup.size }}</td>
-                                                <td><span class="badge {% if backup.status == 'Success' %}bg-success{% else %}bg-danger{% endif %}">{{ backup.status }}</span></td>
-                                                <td>
-                                                    <button class="btn btn-sm btn-outline-primary" data-backup="{{ backup.id }}" data-action="download"><i class="bi bi-download"></i></button>
-                                                    <button class="btn btn-sm btn-outline-success" data-backup="{{ backup.id }}" data-action="restore"><i class="bi bi-arrow-counterclockwise"></i></button>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            <div class="col-md-5">
-                                <div class="card border-0 bg-light mb-3">
-                                    <div class="card-body">
-                                        <h5 class="card-title">Backup Settings</h5>
-                                        <p class="card-text">Current schedule: <strong>{{ status.backup_schedule }}</strong></p>
-                                        <div class="mb-3">
-                                            <label class="form-label">Backup Type</label>
-                                            <select class="form-select" id="backupType">
-                                                <option value="full" selected>Full</option>
-                                                <option value="incremental">Incremental</option>
-                                            </select>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">Storage</label>
-                                            <select class="form-select" id="backupStorage">
-                                                <option value="local" selected>Local</option>
-                                                <option value="cloud">Cloud</option>
-                                            </select>
-                                        </div>
-                                        <div class="d-grid">
-                                            <button class="btn btn-primary" id="saveBackupSettingsBtn">Save Settings</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="d-grid">
-                                    <button class="btn btn-outline-primary" id="createBackupNowBtn">
-                                        <i class="bi bi-cloud-upload"></i> Create Backup Now
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </main>
         </div>
     </div>

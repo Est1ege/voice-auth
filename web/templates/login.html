@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Вход в систему | Голосовая аутентификация</title>
+    <title>System Login | Voice Authentication</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
         body {
@@ -67,7 +67,7 @@
             background-color: #218838;
             border-color: #1e7e34;
         }
-        /* Добавленные стили для кнопок */
+        /* Added styles for buttons */
         .btn-group {
             display: flex;
             flex-direction: column;
@@ -88,38 +88,29 @@
     <div class="container">
         <div class="login-container">
             <div class="logo">
-                <h1>Система голосовой аутентификации</h1>
-                <p>Вход в административную панель</p>
+                <h1>Voice Authentication System</h1>
+                <p>Admin Panel Login</p>
             </div>
-            
+
             {% if error %}
             <div class="alert alert-danger" role="alert">
                 {{ error }}
             </div>
             {% endif %}
-            
+
             <form method="post" action="{{ url_for('login') }}">
                 <div class="form-group">
-                    <label for="username">Имя пользователя</label>
+                    <label for="username">Username</label>
                     <input type="text" class="form-control" id="username" name="username" required>
                 </div>
                 <div class="form-group">
-                    <label for="password">Пароль</label>
+                    <label for="password">Password</label>
                     <input type="password" class="form-control" id="password" name="password" required>
                 </div>
                 <div class="form-group">
-                    <button type="submit" class="btn btn-primary btn-block">Войти</button>
+                    <button type="submit" class="btn btn-primary btn-block">Login</button>
                 </div>
             </form>
-            
-            <div class="alternate-actions">
-                <p>Альтернативные способы входа</p>
-                <div class="btn-group">
-                    <a href="{{ url_for('voice_authorize') }}" class="btn btn-success voice-auth-btn">Голосовая авторизация</a>
-                    <!-- Закомментировано, пока не добавите маршрут checkpoint в app.py -->
-                    <a href="{{ url_for('checkpoint') }}" class="btn btn-primary checkpoint-btn">Режим КПП</a>
-                </div>
-            </div>
         </div>
     </div>
     

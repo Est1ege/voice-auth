@@ -108,6 +108,36 @@
         .main_head {
             padding-top: 4.5rem !important;
         }
+        /* Добавьте эти стили в секцию <style> вашего шаблона enroll_voice.html */
+
+.user-photo {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 5px solid #eee;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Стили для placeholder когда фото отсутствует */
+#noPhotoPlaceholder {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background-color: #f8f9fa !important;
+    border: 2px dashed #dee2e6 !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Анимация при загрузке фото */
+.user-photo, #noPhotoPlaceholder {
+    transition: all 0.3s ease;
+}
+
+.user-photo:hover, #noPhotoPlaceholder:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
     </style>
 </head>
 <body>
@@ -229,32 +259,48 @@
                             </div>
                         </div>
 
-                        <div class="card shadow mb-4">
-                            <div class="card-header">
-                                <h5 class="mb-0">User Photo</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-4 text-center">
-                                        <img src="{{ url_for('api_proxy', subpath='users/' + user.id + '/photo') }}" 
-                                            alt="User Photo" 
-                                            class="user-photo mb-3">
-                                    </div>
-                                    <div class="col-md-8">
-                                        <form action="{{ url_for('upload_user_photo', user_id=user.id) }}" method="post" enctype="multipart/form-data">
-                                            <div class="mb-3">
-                                                <label for="photoFile" class="form-label">Upload New Photo</label>
-                                                <input class="form-control" type="file" id="photoFile" name="photo" accept="image/jpeg,image/png">
-                                                <div class="form-text">Recommended size: 300x300 pixels, JPG or PNG format</div>
-                                            </div>
-                                            <button type="submit" class="btn btn-primary">
-                                                <i class="bi bi-upload"></i> Upload Photo
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+<div class="card shadow mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">User Photo</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4 text-center">
+                <div id="photoContainer">
+                    <!-- Фото пользователя или SVG placeholder будет загружен автоматически -->
+                    <img id="userPhoto"
+                         src="{{ url_for('api_proxy', subpath='users/' + user.id + '/photo') }}"
+                         alt="User Photo"
+                         class="user-photo mb-3"
+                         onerror="this.style.display='none'; document.getElementById('photoError').style.display='block';">
+
+                    <!-- Fallback на случай полной ошибки загрузки -->
+                    <div id="photoError" class="user-photo mb-3 d-flex align-items-center justify-content-center"
+                         style="background-color: #f8f9fa; border: 2px dashed #dee2e6; display: none;">
+                        <i class="bi bi-person-circle" style="font-size: 4rem; color: #6c757d;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <form action="{{ url_for('upload_user_photo', user_id=user.id) }}" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="photoFile" class="form-label">Upload New Photo</label>
+                        <input class="form-control" type="file" id="photoFile" name="photo" accept="image/jpeg,image/png">
+                        <div class="form-text">Recommended size: 300x300 pixels, JPG or PNG format</div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> Upload Photo
+                        </button>
+                        <button type="button" class="btn btn-outline-danger" id="deletePhotoBtn">
+                            <i class="bi bi-trash"></i> Delete Photo
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
                     </div>
                 </div>
             </main>
@@ -413,6 +459,101 @@
             // Initialize on load
             setRandomPhrase();
         });
+        document.addEventListener('DOMContentLoaded', function() {
+    const userPhoto = document.getElementById('userPhoto');
+    const noPhotoPlaceholder = document.getElementById('noPhotoPlaceholder');
+    const deletePhotoBtn = document.getElementById('deletePhotoBtn');
+
+    // Проверка загрузки фото
+    userPhoto.onload = function() {
+        userPhoto.style.display = 'block';
+        noPhotoPlaceholder.style.display = 'none';
+        deletePhotoBtn.style.display = 'inline-block';
+    };
+
+    userPhoto.onerror = function() {
+        userPhoto.style.display = 'none';
+        noPhotoPlaceholder.style.display = 'flex';
+        deletePhotoBtn.style.display = 'none';
+    };
+
+    // Попытка загрузить фото
+    userPhoto.src = "{{ url_for('api_proxy', subpath='users/' + user.id + '/photo') }}";
+
+    // Обработчик удаления фото
+    deletePhotoBtn.addEventListener('click', function() {
+        if (confirm('Are you sure you want to delete this photo?')) {
+            deletePhotoBtn.disabled = true;
+            deletePhotoBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
+
+            fetch(`/api-proxy/users/{{ user.id }}/photo`, {
+                method: 'DELETE'
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Delete failed');
+                }
+            })
+            .then(data => {
+                if (data.success) {
+                    // Перезагружаем страницу для обновления фото
+                    location.reload();
+                } else {
+                    alert('Error deleting photo: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting photo:', error);
+                alert('An error occurred while deleting the photo.');
+            })
+            .finally(() => {
+                deletePhotoBtn.disabled = false;
+                deletePhotoBtn.innerHTML = '<i class="bi bi-trash"></i> Delete Photo';
+            });
+        }
+    });
+});
+
+        document.addEventListener('DOMContentLoaded', function() {
+    const deletePhotoBtn = document.getElementById('deletePhotoBtn');
+
+    // Обработчик удаления фото
+    deletePhotoBtn.addEventListener('click', function() {
+        if (confirm('Are you sure you want to delete this photo?')) {
+            deletePhotoBtn.disabled = true;
+            deletePhotoBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
+
+            fetch(`/api-proxy/users/{{ user.id }}/photo`, {
+                method: 'DELETE'
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Delete failed');
+                }
+            })
+            .then(data => {
+                if (data.success) {
+                    // Перезагружаем страницу для обновления фото
+                    location.reload();
+                } else {
+                    alert('Error deleting photo: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting photo:', error);
+                alert('An error occurred while deleting the photo.');
+            })
+            .finally(() => {
+                deletePhotoBtn.disabled = false;
+                deletePhotoBtn.innerHTML = '<i class="bi bi-trash"></i> Delete Photo';
+            });
+        }
+    });
+});
     </script>
 </body>
 </html>

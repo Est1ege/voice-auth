@@ -126,11 +126,6 @@
                                 <i class="bi bi-gear"></i> System Status
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('auth_monitor') }}">
-                                <i class="bi bi-mic"></i> Auth Monitor
-                            </a>
-                        </li>
                     </ul>
                 </div>
             </nav>
@@ -315,17 +310,11 @@
                                                     <span>Audio Files:</span>
                                                     <small>{{ status.storage.audio_used if status.storage is defined else 'N/A' }} / {{ status.storage.audio_total if status.storage is defined else 'N/A' }}</small>
                                                 </div>
-                                                <div class="progress resource-usage">
-                                                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ status.storage.audio_percent }}%" aria-valuenow="{{ status.storage.audio_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
-                                                </div>
                                             </li>
                                             <li class="list-group-item">
                                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                                     <span>Database:</span>
                                                     <small>{{ status.storage.db_used }} / {{ status.storage.db_total }}</small>
-                                                </div>
-                                                <div class="progress resource-usage">
-                                                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ status.storage.db_percent }}%" aria-valuenow="{{ status.storage.db_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
                                                 </div>
                                             </li>
                                             <li class="list-group-item">

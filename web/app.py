@@ -82,7 +82,7 @@ def login():
                 return redirect(url_for('admin_dashboard'))
             return redirect(url_for('user_dashboard'))
         else:
-            error = 'Неверное имя пользователя или пароль'
+            error = 'Incorrect username or password'
 
     return render_template('login.html', error=error)
 
@@ -282,77 +282,117 @@ def add_user():
                 # Improved error handling
                 error_response = response.json()
                 error_detail = error_response.get('detail', error_response.get('message', 'Unknown error'))
-                error = f"Ошибка при создании пользователя: {error_detail}"
+                error = f"Error creating user: {error_detail}"
                 return render_template('admin/add_user.html', error=error)
         except Exception as e:
-            error = f"Ошибка соединения с API: {str(e)}"
+            error = f"Error connecting to API: {str(e)}"
             return render_template('admin/add_user.html', error=error)
 
     return render_template('admin/add_user.html')
 
 
-@app.route('/api-proxy/<path:subpath>')
+# Замените существующую функцию api_proxy в web/app.py на эту обновленную версию
+
+@app.route('/api-proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @admin_required
 def api_proxy(subpath):
     """
     Прокси для API запросов к серверу API.
-    Используется для получения файлов, таких как фотографии пользователей.
+    Поддерживает все HTTP методы для полной функциональности.
     """
     try:
         # Создаем полный URL для запроса к API
         api_url = f"{API_URL}/api/{subpath}"
 
-        # Отправляем запрос к API с теми же параметрами, что и оригинальный запрос
-        response = requests.get(
-            api_url,
-            params=request.args,
-            stream=True,
-            headers={key: value for key, value in request.headers if key != 'Host'}
-        )
+        # Определяем метод запроса
+        method = request.method
+
+        # Подготавливаем параметры для запроса
+        request_kwargs = {
+            'params': request.args,
+            'headers': {key: value for key, value in request.headers if key.lower() not in ['host', 'content-length']},
+            'stream': True
+        }
+
+        # Добавляем данные для POST/PUT запросов
+        if method in ['POST', 'PUT'] and request.data:
+            request_kwargs['data'] = request.data
+
+        # Добавляем JSON данные если есть
+        if method in ['POST', 'PUT'] and request.is_json:
+            request_kwargs['json'] = request.get_json()
+            request_kwargs.pop('data', None)  # Убираем data если используем json
+
+        # Отправляем запрос к API
+        if method == 'GET':
+            response = requests.get(api_url, **request_kwargs)
+        elif method == 'POST':
+            response = requests.post(api_url, **request_kwargs)
+        elif method == 'PUT':
+            response = requests.put(api_url, **request_kwargs)
+        elif method == 'DELETE':
+            response = requests.delete(api_url, **request_kwargs)
+        else:
+            return Response("Method not allowed", status=405)
 
         # Создаем объект Response с данными из API
-        flask_response = Response(
-            response=response.raw.read(),
-            status=response.status_code
-        )
+        if response.headers.get('content-type', '').startswith('application/json'):
+            # Для JSON ответов
+            flask_response = Response(
+                response=response.content,
+                status=response.status_code,
+                content_type='application/json'
+            )
+        else:
+            # Для файлов и других типов контента
+            flask_response = Response(
+                response=response.content,
+                status=response.status_code
+            )
 
         # Копируем заголовки из ответа API
         for key, value in response.headers.items():
-            if key.lower() not in ('content-length', 'connection', 'content-encoding'):
+            if key.lower() not in ('content-length', 'connection', 'content-encoding', 'transfer-encoding'):
                 flask_response.headers[key] = value
 
         return flask_response
-    except Exception as e:
-        app.logger.error(f"Error in API proxy: {str(e)}")
-        return Response(f"Error connecting to API server: {str(e)}", status=500)
 
-# web/app.py - добавьте маршрут для загрузки фото пользователя
+    except requests.exceptions.ConnectionError:
+        app.logger.error(f"Connection error to API server for {method} {subpath}")
+        return Response("API server unavailable", status=503)
+    except requests.exceptions.Timeout:
+        app.logger.error(f"Timeout error to API server for {method} {subpath}")
+        return Response("API server timeout", status=504)
+    except Exception as e:
+        app.logger.error(f"Error in API proxy for {method} {subpath}: {str(e)}")
+        return Response(f"Proxy error: {str(e)}", status=500)
+
 @app.route('/admin/users/<user_id>/upload_photo', methods=['POST'])
 @admin_required
 def upload_user_photo(user_id):
     """Загрузка фотографии пользователя"""
     try:
         if 'photo' not in request.files:
-            flash('Не выбрано фото', 'danger')
+            flash('No photo selected', 'danger')
             return redirect(url_for('enroll_user_voice', user_id=user_id))
 
         photo = request.files['photo']
 
         if photo.filename == '':
-            flash('Не выбрано фото', 'danger')
+            flash('No photo selected', 'danger')
             return redirect(url_for('enroll_user_voice', user_id=user_id))
 
         # Проверка типа файла
         allowed_extensions = {'jpg', 'jpeg', 'png'}
         if not photo.filename.lower().split('.')[-1] in allowed_extensions:
-            flash('Недопустимый формат файла. Разрешены только JPG и PNG', 'danger')
+            flash('Invalid file format. Only JPG and PNG are allowed.', 'danger')
             return redirect(url_for('enroll_user_voice', user_id=user_id))
 
         # Получение информации о пользователе
         response = requests.get(f"{API_URL}/api/users/{user_id}")
 
         if response.status_code != 200:
-            flash('Пользователь не найден', 'danger')
+            flash('User not found', 'danger')
             return redirect(url_for('manage_users'))
 
         # Сохранение фото
@@ -367,9 +407,9 @@ def upload_user_photo(user_id):
             )
 
         if upload_response.status_code == 200:
-            flash('Фото успешно загружено', 'success')
+            flash('Photo uploaded successfully', 'success')
         else:
-            flash(f'Ошибка при загрузке фото: {upload_response.json().get("detail", "Неизвестная ошибка")}', 'danger')
+            flash(f'Error uploading photo: {upload_response.json().get("detail", "Unknown error")}', 'danger')
 
         # Удаление временного файла
         if os.path.exists(photo_path):
@@ -377,7 +417,7 @@ def upload_user_photo(user_id):
 
         return redirect(url_for('enroll_user_voice', user_id=user_id))
     except Exception as e:
-        flash(f'Ошибка: {str(e)}', 'danger')
+        flash(f'Error: {str(e)}', 'danger')
         return redirect(url_for('enroll_user_voice', user_id=user_id))
 
 
@@ -389,7 +429,7 @@ def enroll_user_voice(user_id):
         response = requests.get(f"{API_URL}/api/users/{user_id}")
         user = response.json().get('user', {})
     except:
-        user = {'id': user_id, 'name': 'Неизвестный пользователь'}
+        user = {'id': user_id, 'name': 'Unknown user'}
 
     # Получение прогресса записи голоса
     try:
@@ -975,57 +1015,6 @@ def get_fallback_status():
         'timestamp': datetime.now().isoformat()
     }
 
-@app.route('/admin/auth-monitor')
-@admin_required
-def auth_monitor():
-    """Страница мониторинга голосовой аутентификации"""
-    return render_template('admin/auth_monitor.html')
-
-
-@app.route('/admin/system/reinitialize', methods=['POST'])
-@admin_required
-def reinitialize_system_web():
-    """Переинициализация системы через веб-интерфейс"""
-    try:
-        # Вызов API для переинициализации системы
-        response = requests.post(f"{API_URL}/api/system/reinitialize")
-        
-        if response.status_code == 200:
-            result = response.json()
-            
-            if result.get('success', False):
-                # Система успешно переинициализирована
-                flash('Система успешно переинициализирована', 'success')
-            else:
-                # Произошла ошибка при переинициализации
-                error_message = result.get('error', 'Неизвестная ошибка')
-                flash(f'Ошибка при переинициализации системы: {error_message}', 'danger')
-        else:
-            # Ошибка API запроса
-            flash(f'Ошибка API запроса: {response.status_code}', 'danger')
-        
-        # Перенаправляем на страницу статуса системы
-        return redirect(url_for('system_status'))
-        
-    except Exception as e:
-        flash(f'Ошибка при переинициализации системы: {str(e)}', 'danger')
-        return redirect(url_for('system_status'))
-
-# web/app.py - добавьте новый маршрут
-@app.route('/admin/system/filesystem')
-@admin_required
-def filesystem_diagnosis():
-    """Страница диагностики файловой системы"""
-    try:
-        response = requests.get(f"{API_URL}/api/system/filesystem")
-        fs_data = response.json() if response.status_code == 200 else {"error": "Failed to get filesystem data"}
-
-        return render_template('admin/filesystem_diagnosis.html', fs_data=fs_data)
-    except Exception as e:
-        flash(f'Ошибка при получении данных файловой системы: {str(e)}', 'danger')
-        return redirect(url_for('system_status'))
-
-
 @app.route('/admin/training/cleanup', methods=['POST'])
 @admin_required
 def cleanup_trainings():
@@ -1051,7 +1040,6 @@ def cleanup_trainings():
         flash(f'Ошибка при очистке: {str(e)}', 'danger')
 
     return redirect(url_for('training_list'))
-
 
 @app.route('/admin/training/dashboard')
 @admin_required
@@ -1150,7 +1138,6 @@ def train_anti_spoof():
 
     return render_template('admin/train_anti_spoof.html')
 
-
 @app.route('/admin/training/<task_id>/status')
 @admin_required
 def training_status(task_id):
@@ -1176,9 +1163,6 @@ def training_status(task_id):
     except Exception as e:
         error = f"Ошибка соединения с API: {str(e)}"
         return render_template('admin/training_status.html', error=error, task_id=task_id)
-
-
-# Добавьте этот маршрут в web/app.py
 
 @app.route('/api/voice/system_status')
 def voice_system_status():
@@ -1303,7 +1287,6 @@ def training_list():
         error = f"Неожиданная ошибка: {str(e)}"
         return render_template('admin/training_list.html', error=error)
 
-
 @app.route('/admin/training/start', methods=['POST'])
 @admin_required
 def start_training():
@@ -1350,7 +1333,6 @@ def start_training():
         flash(f'Ошибка при запуске тренировки: {str(e)}', 'danger')
         return redirect(url_for('training_dashboard'))
 
-
 @app.route('/admin/training/<task_id>/stop', methods=['POST'])
 @admin_required
 def stop_training(task_id):
@@ -1376,7 +1358,6 @@ def stop_training(task_id):
 
     # Перенаправляем обратно на страницу статуса или список
     return redirect(url_for('training_status', task_id=task_id))
-
 
 @app.route('/admin/training/<task_id>/deploy', methods=['POST'])
 @admin_required
@@ -1416,7 +1397,6 @@ def deploy_model(task_id):
         flash(f'Ошибка при развертывании модели: {str(e)}', 'danger')
 
     return redirect(url_for('training_status', task_id=task_id))
-# НОВЫЕ МАРШРУТЫ ДЛЯ УПРОЩЕННОГО ДОБАВЛЕНИЯ ПОЛЬЗОВАТЕЛЕЙ И ПЕРЕНОСА СИСТЕМЫ
 
 @app.route('/admin/users/simple_add', methods=['GET', 'POST'])
 @admin_required
@@ -1483,23 +1463,23 @@ def simple_add_user():
                 upload_result = upload_response.json()
 
                 if upload_result.get("success", False):
-                    status_message = f"Пользователь {name} успешно создан с {upload_result.get('processed_files', 0)} аудиофайлами"
+                    status_message = f"User {name} successfully created with {upload_result.get('processed_files', 0)} audio files"
 
                     if upload_result.get("activation_status", False):
-                        status_message += " и активирован"
+                        status_message += " and activated"
                     else:
-                        status_message += " (не активирован)"
+                        status_message += " (not activated)"
 
                     flash(status_message, 'success')
                     return render_template('admin/simple_add_user.html', success=status_message)
                 else:
-                    error_message = upload_result.get("message", "Неизвестная ошибка при загрузке аудиофайлов")
+                    error_message = upload_result.get("message", "Unknown error while loading audio files")
                     flash(error_message, 'danger')
                     return render_template('admin/simple_add_user.html', error=error_message)
 
             except Exception as e:
-                flash(f'Ошибка при загрузке аудиофайлов: {str(e)}', 'danger')
-                return render_template('admin/simple_add_user.html', error=f'Ошибка при загрузке аудиофайлов: {str(e)}')
+                flash(f'Error loading audio files: {str(e)}', 'danger')
+                return render_template('admin/simple_add_user.html', error=f'Error loading audio files: {str(e)}')
 
             finally:
                 # Закрываем все открытые файлы при любом исходе
@@ -1523,219 +1503,6 @@ def simple_add_user():
             return render_template('admin/simple_add_user.html', error=f'Ошибка при взаимодействии с API: {str(e)}')
 
     return render_template('admin/simple_add_user.html')
-
-@app.route('/admin/users/batch_import/zip', methods=['POST'])
-@admin_required
-def batch_import_users_from_zip():
-    """Обработка пакетного импорта из ZIP-архива"""
-    if 'zip_file' not in request.files:
-        flash('Нет выбранного ZIP-архива', 'danger')
-        return redirect(url_for('batch_import_view'))
-
-    zip_file = request.files['zip_file']
-
-    if not zip_file or not zip_file.filename or not zip_file.filename.lower().endswith('.zip'):
-        flash('Неверный формат файла. Требуется ZIP-архив', 'danger')
-        return redirect(url_for('batch_import_view'))
-
-    # Создаем временную директорию для обработки
-    temp_dir = tempfile.mkdtemp(dir=UPLOAD_FOLDER)
-    zip_path = os.path.join(temp_dir, secure_filename(zip_file.filename))
-
-    try:
-        # Сохраняем архив
-        zip_file.save(zip_path)
-
-        # Распаковываем архив
-        extract_dir = os.path.join(temp_dir, 'extract')
-        os.makedirs(extract_dir, exist_ok=True)
-
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
-
-        # Находим директории пользователей
-        user_dirs = [d for d in os.listdir(extract_dir)
-                     if os.path.isdir(os.path.join(extract_dir, d)) and d != '__MACOSX']
-
-        if not user_dirs:
-            flash('В архиве не найдены директории пользователей', 'danger')
-            return redirect(url_for('batch_import_view'))
-
-        # Обрабатываем каждого пользователя
-        success_count = 0
-        total_count = len(user_dirs)
-
-        for user_dir_name in user_dirs:
-            user_dir = os.path.join(extract_dir, user_dir_name)
-
-            # Ищем WAV-файлы
-            wav_files = [os.path.join(user_dir, f) for f in os.listdir(user_dir)
-                         if os.path.isfile(os.path.join(user_dir, f)) and f.lower().endswith('.wav')]
-
-            if len(wav_files) < 5:
-                continue
-
-            try:
-                # Создаем пользователя
-                display_name = user_dir_name.replace('_', ' ')
-                response = requests.post(f"{API_URL}/api/simple/users", data={"name": display_name})
-                response.raise_for_status()
-
-                result = response.json()
-                if not result.get("success", False):
-                    continue
-
-                user_id = result.get("user_id")
-
-                # Загружаем аудиофайлы
-                files = []
-                for file_path in wav_files:
-                    if os.path.exists(file_path):
-                        files.append(('audio_files', (os.path.basename(file_path), open(file_path, 'rb'), 'audio/wav')))
-
-                # Отправляем запрос на загрузку аудиофайлов
-                try:
-                    upload_response = requests.post(
-                        f"{API_URL}/api/simple/upload_voice_batch",
-                        data={"user_id": user_id},
-                        files=files
-                    )
-                    upload_response.raise_for_status()
-
-                    # Закрываем все открытые файлы
-                    for _, file_tuple, _, _ in files:
-                        file_tuple.close()
-
-                    upload_result = upload_response.json()
-
-                    if upload_result.get("success", False):
-                        success_count += 1
-
-                except Exception as e:
-                    # Закрываем все открытые файлы при ошибке
-                    for _, file_tuple, _, _ in files:
-                        try:
-                            file_tuple.close()
-                        except:
-                            pass
-
-            except Exception as e:
-                continue
-
-        flash(f'Успешно импортировано {success_count} из {total_count} пользователей', 'success' if success_count > 0 else 'warning')
-        return redirect(url_for('manage_users'))
-
-    except Exception as e:
-        flash(f'Ошибка при импорте пользователей из архива: {str(e)}', 'danger')
-        return redirect(url_for('batch_import_view'))
-
-    finally:
-        # Удаляем временную директорию
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-@app.route('/admin/system/export', methods=['POST'])
-@admin_required
-def export_system():
-    """Экспорт системы в ZIP-архив"""
-    # Получение параметров
-    include_audio = request.form.get('include_audio', 'on') == 'on'
-    include_logs = request.form.get('include_logs', 'on') == 'on'
-
-    try:
-        # Вызов API для экспорта
-        response = requests.get(f"{API_URL}/api/system/export")
-        response.raise_for_status()
-
-        result = response.json()
-
-        if not result.get("success", False):
-            return jsonify({"success": False, "message": result.get("message", "Ошибка экспорта")})
-
-        export_filename = result.get("export_file")
-        download_url = result.get("download_url")
-
-        # Загружаем файл с API
-        file_response = requests.get(f"{API_URL}{download_url}", stream=True)
-        file_response.raise_for_status()
-
-        # Сохраняем в директорию экспорта
-        export_file_path = os.path.join(EXPORT_FOLDER, export_filename)
-        with open(export_file_path, 'wb') as f:
-            for chunk in file_response.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-        return jsonify({
-            "success": True,
-            "download_url": url_for('download_export', filename=export_filename),
-            "message": "Экспорт успешно выполнен"
-        })
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"Ошибка при экспорте: {str(e)}"})
-
-@app.route('/admin/downloads/<filename>')
-@admin_required
-def download_export(filename):
-    """Скачивание файла экспорта"""
-    return send_from_directory(EXPORT_FOLDER, filename, as_attachment=True)
-
-
-@app.route('/admin/users/add_options')
-@admin_required
-def user_add_options():
-    """Страница с опциями добавления пользователей"""
-    return render_template('admin/user_add_options.html')
-
-@app.route('/admin/system/import', methods=['POST'])
-@admin_required
-def import_system():
-    """Импорт системы из ZIP-архива"""
-    if 'import_file' not in request.files:
-        return jsonify({"success": False, "message": "Файл не выбран"})
-
-    import_file = request.files['import_file']
-
-    if not import_file or not import_file.filename or not import_file.filename.lower().endswith('.zip'):
-        return jsonify({"success": False, "message": "Неверный формат файла. Требуется ZIP-архив"})
-
-    # Проверка подтверждения
-    if request.form.get('confirm_import') != 'on':
-        return jsonify({"success": False, "message": "Необходимо подтвердить импорт"})
-
-    try:
-        # Сохранение файла во временную директорию
-        temp_file = os.path.join(UPLOAD_FOLDER, secure_filename(import_file.filename))
-        import_file.save(temp_file)
-
-        # Отправка файла в API
-        with open(temp_file, 'rb') as f:
-            response = requests.post(
-                f"{API_URL}/api/system/import",
-                files={"import_file": (os.path.basename(temp_file), f)}
-            )
-
-        response.raise_for_status()
-
-        # Удаление временного файла
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-
-        result = response.json()
-
-        if not result.get("success", False):
-            return jsonify({"success": False, "message": result.get("message", "Ошибка импорта")})
-
-        return jsonify({
-            "success": True,
-            "message": "Импорт успешно выполнен"
-        })
-
-    except Exception as e:
-        # Попытка удаления временного файла при ошибке
-        if 'temp_file' in locals() and os.path.exists(temp_file):
-            os.remove(temp_file)
-
-        return jsonify({"success": False, "message": f"Ошибка при импорте: {str(e)}"})
 
 @app.route('/authorize', methods=['GET', 'POST'])
 def voice_authorize():
@@ -1762,57 +1529,11 @@ def voice_authorize():
 
     return render_template('authorize.html')
 
-# Добавьте этот маршрут в web/app.py
 @app.route('/checkpoint')
 @login_required
 def checkpoint():
     """Страница режима контрольно-пропускного пункта"""
     return render_template('checkpoint.html')
-
-# Прокси-маршруты для API (чтобы избежать проблем с CORS)
-@app.route('/api/kpp/start', methods=['POST'])
-@login_required
-def proxy_kpp_start():
-    """Прокси для запуска КПП"""
-    try:
-        response = requests.post(f"{API_URL}/api/kpp/start")
-        return jsonify(response.json())
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/kpp/stop', methods=['POST'])
-@login_required
-def proxy_kpp_stop():
-    """Прокси для остановки КПП"""
-    try:
-        response = requests.post(f"{API_URL}/api/kpp/stop")
-        return jsonify(response.json())
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/kpp/status')
-@login_required
-def proxy_kpp_status():
-    """Прокси для получения статуса КПП"""
-    try:
-        response = requests.get(f"{API_URL}/api/kpp/status")
-        return jsonify(response.json())
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route('/api/voice/kpp_mode', methods=['POST'])
-@login_required
-def proxy_voice_kpp_mode():
-    """Прокси для управления режимом КПП"""
-    try:
-        data = request.get_json()
-        response = requests.post(f"{API_URL}/api/kpp/start" if data.get('enabled', False) else f"{API_URL}/api/kpp/stop", json=data)
-        return jsonify(response.json()), response.status_code
-    except Exception as e:
-        app.logger.error(f"Error in KPP mode proxy: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route('/api/voice/recent_events')
 @login_required
@@ -1857,7 +1578,7 @@ def voice_recent_events():
                         user = user_response.json().get("user", {})
                         user_info = {
                             "id": user_id,
-                            "name": user.get("name", "Неизвестный пользователь"),
+                            "name": user.get("name", "Unknown user"),
                             "department": user.get("department", "-"),
                             "position": user.get("position", "-"),
                             "photo_url": f"/api-proxy/users/{user_id}/photo" if user.get("has_photo") else None
@@ -1883,7 +1604,6 @@ def voice_recent_events():
     except Exception as e:
         app.logger.error(f"Error getting recent auth events: {e}")
         return jsonify({"events": []}), 500
-
 
 @app.route('/api/voice/authenticate', methods=['POST'])
 def voice_authenticate_proxy():
@@ -2017,34 +1737,6 @@ def voice_authenticate_proxy():
             'error_code': 'INTERNAL_SERVER_ERROR'
         }), 500
 
-# Добавьте этот маршрут в web/app.py
-
-@app.post("/system/reinitialize")
-async def reinitialize_system():
-    """Полная переинициализация системы"""
-    try:
-        # Перезагрузка эмбеддингов
-        emb_success = force_reload_embeddings()
-
-        # Сброс порогов
-        global adaptive_threshold, SPOOFING_THRESHOLD
-        adaptive_threshold = 0.5  # Установите низкий порог для тестирования
-        SPOOFING_THRESHOLD = 0.7  # Высокий порог для спуфинга
-
-        return {
-            "success": True,
-            "embeddings_reloaded": emb_success,
-            "user_count": len(user_embeddings),
-            "adaptive_threshold": adaptive_threshold,
-            "spoofing_threshold": SPOOFING_THRESHOLD
-        }
-    except Exception as e:
-        logger.error(f"Error reinitializing system: {e}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
 @app.route('/static/js/<path:filename>')
 def serve_js(filename):
     """Обслуживание JavaScript файлов из директории static/js"""
@@ -2061,14 +1753,14 @@ def delete_user(user_id):
         result = response.json()
 
         if result.get('success', False):
-            flash('Пользователь успешно удален', 'success')
+            flash('User succesful deleted', 'success')
         else:
             # Получаем детали ошибки от API
-            error_message = result.get('message', 'Не удалось удалить пользователя')
-            flash(f'Ошибка при удалении пользователя: {error_message}', 'danger')
+            error_message = result.get('message', 'Failed to delete user')
+            flash(f'Error deleting user: {error_message}', 'danger')
 
     except Exception as e:
-        flash(f'Ошибка при удалении пользователя: {str(e)}', 'danger')
+        flash(f'Error deleting user: {str(e)}', 'danger')
 
     return redirect(url_for('manage_users'))
 

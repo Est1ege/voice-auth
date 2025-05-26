@@ -325,9 +325,6 @@ async def health_check():
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Сервис не работает: {str(e)}")
 
-
-# Замените существующий эндпоинт /api/system/status в api/app.py
-
 @app.get("/api/system/status")
 async def system_status(db=Depends(get_db)):
     """Получение подробного статуса системы"""
@@ -633,26 +630,6 @@ async def upload_user_photo(
         logger.error(f"Error uploading user photo: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.route('/api/system/reinitialize', methods=['POST'])
-def reinitialize_system():
-    """Fully reinitialize the system for troubleshooting"""
-    try:
-        # Hit the ML service reinitialize endpoint
-        response = requests.post(f"{API_URL}/ml/system/reinitialize")
-        result = response.json()
-
-        if result.get("success", False):
-            flash('Система успешно переинициализирована', 'success')
-        else:
-            flash(f'Ошибка при переинициализации: {result.get("error", "Неизвестная ошибка")}', 'danger')
-
-        return redirect(url_for('system_status'))
-
-    except Exception as e:
-        flash(f'Ошибка при переинициализации системы: {str(e)}', 'danger')
-        return redirect(url_for('system_status'))
-
 @app.get("/api/users/{user_id}/voice_samples")
 async def get_voice_samples(user_id: str, db=Depends(get_db)):
     from bson.objectid import ObjectId
@@ -717,28 +694,6 @@ async def activate_user(user_id: str, db=Depends(get_db)):
         logger.error(f"Error activating user: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.websocket("/ws/auth-monitor")
-async def websocket_auth_monitor(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            # Ждем сообщения от клиента (для поддержания соединения)
-            data = await websocket.receive_text()
-            
-            # Если клиент запрашивает актуальные данные
-            if data == "get_recent":
-                # Получение последних событий аутентификации
-                events = await db.logs.find({
-                    "event_type": {"$in": ["authorization_successful", "authorization_attempt", "spoofing_attempt"]}
-                }).sort("timestamp", -1).limit(5).to_list(5)
-                
-                # Форматирование и отправка
-                formatted_events = [...] # Тот же код что и в get_recent_auth_events
-                await websocket.send_json({"events": formatted_events})
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-
-# api/app.py - обновите эндпоинт authorize_user для поддержки дополнительных данных
 @app.post("/api/authorize")
 async def authorize_user(
         audio_data: UploadFile = File(...),
@@ -1736,553 +1691,6 @@ async def update_auth_settings(
     except Exception as e:
         logger.error(f"Error updating auth settings: {e}")
         return {"success": False, "error": str(e)}
-
-# api/app.py - добавьте новый эндпоинт для диагностики файловой системы
-@app.get("/api/system/filesystem")
-async def check_filesystem(db=Depends(get_db)):
-    """Проверка структуры файловой системы для аудиофайлов"""
-    try:
-        result = {
-            "audio_path_exists": os.path.exists(AUDIO_PATH),
-            "audio_path": AUDIO_PATH,
-            "users_directories": [],
-            "total_audio_files": 0,
-            "missing_files": 0
-        }
-        
-        # Проверка корневой директории
-        if not os.path.exists(AUDIO_PATH):
-            logger.error(f"Audio path does not exist: {AUDIO_PATH}")
-            return result
-        
-        # Получение списка пользователей из базы данных
-        users = await db.users.find().to_list(1000)
-        
-        # Проверка директорий пользователей и файлов
-        for user in users:
-            user_id = str(user["_id"])
-            user_dir = os.path.join(AUDIO_PATH, user_id)
-            
-            user_info = {
-                "user_id": user_id,
-                "name": user.get("name", "Unknown"),
-                "directory_exists": os.path.exists(user_dir),
-                "directory_path": user_dir,
-                "sample_count_db": len(user.get("voice_samples", [])),
-                "sample_count_fs": 0,
-                "files": []
-            }
-            
-            # Если директория существует, проверим файлы
-            if os.path.exists(user_dir):
-                audio_files = [f for f in os.listdir(user_dir) if f.endswith((".wav", ".WAV"))]
-                user_info["sample_count_fs"] = len(audio_files)
-                result["total_audio_files"] += len(audio_files)
-                
-                # Получим список образцов голоса из базы данных
-                samples = await db.voice_samples.find({"user_id": user_id}).to_list(100)
-                
-                # Проверим наличие файлов из базы данных
-                for sample in samples:
-                    file_path = sample.get("file_path", "")
-                    filename = os.path.basename(file_path) if file_path else ""
-                    
-                    file_info = {
-                        "sample_id": str(sample["_id"]),
-                        "filename": filename,
-                        "db_path": file_path,
-                        "exists": os.path.exists(file_path) if file_path else False
-                    }
-                    
-                    # Если файл не существует, проверим альтернативные пути
-                    if not file_info["exists"] and filename:
-                        alt_path = os.path.join(user_dir, filename)
-                        if os.path.exists(alt_path):
-                            file_info["alt_path"] = alt_path
-                            file_info["alt_exists"] = True
-                        else:
-                            result["missing_files"] += 1
-                    
-                    user_info["files"].append(file_info)
-            else:
-                # Если директория не существует, все файлы отсутствуют
-                samples = await db.voice_samples.find({"user_id": user_id}).to_list(100)
-                result["missing_files"] += len(samples)
-            
-            result["users_directories"].append(user_info)
-        
-        return result
-    except Exception as e:
-        logger.error(f"Error checking filesystem: {e}")
-        return {"error": str(e)}
-
-# api/app.py - добавьте новые эндпоинты
-@app.post("/api/system/fix_file_paths")
-async def fix_file_paths(db=Depends(get_db)):
-    """Исправление путей к файлам в базе данных"""
-    try:
-        # Получение всех образцов голоса
-        samples = await db.voice_samples.find().to_list(10000)
-        fixed_count = 0
-        
-        for sample in samples:
-            file_path = sample.get("file_path")
-            if not file_path or not os.path.exists(file_path):
-                # Попытка найти файл по альтернативным путям
-                user_id = sample.get("user_id")
-                filename = os.path.basename(file_path) if file_path else ""
-                
-                if filename:
-                    # Проверяем возможные пути
-                    alternative_paths = [
-                        os.path.join(AUDIO_PATH, user_id, filename),
-                        os.path.join(AUDIO_PATH, str(user_id), filename)
-                    ]
-                    
-                    for alt_path in alternative_paths:
-                        if os.path.exists(alt_path):
-                            # Обновляем путь в базе данных
-                            await db.voice_samples.update_one(
-                                {"_id": sample["_id"]},
-                                {"$set": {"file_path": alt_path}}
-                            )
-                            fixed_count += 1
-                            logger.info(f"Fixed path for sample {sample['_id']}: {alt_path}")
-                            break
-        
-        return {
-            "success": True,
-            "fixed_count": fixed_count,
-            "total_samples": len(samples)
-        }
-    except Exception as e:
-        logger.error(f"Error fixing file paths: {e}")
-        return {"success": False, "message": str(e)}
-
-@app.post("/api/system/create_missing_dirs")
-async def create_missing_dirs(db=Depends(get_db)):
-    """Создание отсутствующих директорий пользователей"""
-    try:
-        # Получение всех пользователей
-        users = await db.users.find().to_list(1000)
-        created_count = 0
-        
-        # Проверка корневой директории
-        if not os.path.exists(AUDIO_PATH):
-            os.makedirs(AUDIO_PATH, exist_ok=True)
-            logger.info(f"Created root audio directory: {AUDIO_PATH}")
-        
-        # Создание директорий пользователей
-        for user in users:
-            user_id = str(user["_id"])
-            user_dir = os.path.join(AUDIO_PATH, user_id)
-            
-            if not os.path.exists(user_dir):
-                os.makedirs(user_dir, exist_ok=True)
-                created_count += 1
-                logger.info(f"Created directory for user {user_id}: {user_dir}")
-        
-        return {
-            "success": True,
-            "created_count": created_count,
-            "total_users": len(users)
-        }
-    except Exception as e:
-        logger.error(f"Error creating missing directories: {e}")
-        return {"success": False, "message": str(e)}
-
-@app.post("/api/system/cleanup_data")
-async def cleanup_data(db=Depends(get_db)):
-    """Очистка неконсистентных данных в базе данных"""
-    try:
-        # Получение всех образцов голоса
-        samples = await db.voice_samples.find().to_list(10000)
-        removed_count = 0
-        
-        for sample in samples:
-            file_path = sample.get("file_path")
-            sample_id = str(sample["_id"])
-            user_id = sample.get("user_id")
-            
-            # Проверка наличия файла
-            file_exists = False
-            if file_path and os.path.exists(file_path):
-                file_exists = True
-            else:
-                # Проверка альтернативных путей
-                filename = os.path.basename(file_path) if file_path else ""
-                if filename:
-                    alt_path = os.path.join(AUDIO_PATH, user_id, filename)
-                    if os.path.exists(alt_path):
-                        file_exists = True
-            
-            # Если файл не существует, удаляем запись
-            if not file_exists:
-                # Удаление образца из базы данных
-                await db.voice_samples.delete_one({"_id": sample["_id"]})
-                
-                # Удаление ссылки на образец из пользователя
-                await db.users.update_one(
-                    {"_id": ObjectId(user_id)},
-                    {"$pull": {"voice_samples": sample_id}}
-                )
-                
-                removed_count += 1
-                logger.info(f"Removed sample {sample_id} for user {user_id} due to missing file")
-        
-        # Проверка и деактивация пользователей с недостаточным количеством образцов
-        users = await db.users.find({"active": True}).to_list(1000)
-        deactivated_count = 0
-        
-        for user in users:
-            user_id = str(user["_id"])
-            sample_count = len(user.get("voice_samples", []))
-            
-            if sample_count < 5:
-                await db.users.update_one(
-                    {"_id": user["_id"]},
-                    {"$set": {"active": False}}
-                )
-                deactivated_count += 1
-                logger.info(f"Deactivated user {user_id} due to insufficient samples ({sample_count})")
-        
-        return {
-            "success": True,
-            "removed_count": removed_count,
-            "deactivated_count": deactivated_count,
-            "total_samples": len(samples)
-        }
-    except Exception as e:
-        logger.error(f"Error cleaning up data: {e}")
-        return {"success": False, "message": str(e)}
-
-@app.post("/api/system/regenerate_all_embeddings")
-async def regenerate_all_embeddings(db=Depends(get_db)):
-    """Пересоздание эмбеддингов для всех аудиофайлов"""
-    try:
-        # Получение всех пользователей
-        users = await db.users.find().to_list(1000)
-        updated_count = 0
-        error_count = 0
-        
-        for user in users:
-            user_id = str(user["_id"])
-            
-            # Получение образцов голоса пользователя
-            samples = await db.voice_samples.find({"user_id": user_id}).to_list(100)
-            
-            # Пересоздание эмбеддингов
-            new_embeddings = []
-            
-            for sample in samples:
-                file_path = sample.get("file_path")
-                
-                # Проверка существования файла
-                if not file_path or not os.path.exists(file_path):
-                    # Попытка найти файл по альтернативному пути
-                    filename = os.path.basename(file_path) if file_path else ""
-                    if filename:
-                        alt_path = os.path.join(AUDIO_PATH, user_id, filename)
-                        if os.path.exists(alt_path):
-                            file_path = alt_path
-                
-                if file_path and os.path.exists(file_path):
-                    try:
-                        # Извлечение эмбеддинга
-                        embedding_result = await call_ml_service("POST", "/extract_embedding", {
-                            "audio_path": file_path
-                        })
-                        
-                        if "embedding" in embedding_result:
-                            embedding = embedding_result["embedding"]
-                            
-                            # Обновление эмбеддинга в образце
-                            await db.voice_samples.update_one(
-                                {"_id": sample["_id"]},
-                                {"$set": {"embedding": embedding}}
-                            )
-                            
-                            # Добавление в список новых эмбеддингов
-                            new_embeddings.append(embedding)
-                            updated_count += 1
-                        else:
-                            error_count += 1
-                    except Exception as e:
-                        logger.error(f"Error regenerating embedding for sample {sample['_id']}: {e}")
-                        error_count += 1
-                else:
-                    error_count += 1
-            
-            # Обновление эмбеддингов пользователя
-            if new_embeddings:
-                await db.users.update_one(
-                    {"_id": user["_id"]},
-                    {"$set": {"voice_embeddings": new_embeddings}}
-                )
-                
-                # Проверка необходимости активации пользователя
-                if len(new_embeddings) >= 5 and not user.get("active", False):
-                    await db.users.update_one(
-                        {"_id": user["_id"]},
-                        {"$set": {"active": True}}
-                    )
-                    logger.info(f"Activated user {user_id} after regenerating embeddings")
-                
-                # Обновление модели
-                try:
-                    await call_ml_service("POST", "/update_model", {
-                        "user_id": user_id,
-                        "embeddings": new_embeddings
-                    })
-                except Exception as e:
-                    logger.error(f"Error updating ML model for user {user_id}: {e}")
-        
-        return {
-            "success": True,
-            "updated_count": updated_count,
-            "error_count": error_count
-        }
-    except Exception as e:
-        logger.error(f"Error regenerating all embeddings: {e}")
-        return {"success": False, "message": str(e)}
-
-# Фикция для работы с тестовым интерфейсом
-@app.post("/api/test/authenticate")
-async def test_authenticate(
-    audio_file: UploadFile = File(...),
-    threshold: float = Form(0.7),
-    expected_user: Optional[str] = Form(None)
-):
-    """
-    Тестовый эндпоинт для проверки аутентификации по аудиофайлу с настраиваемым порогом
-    """
-    try:
-        logger.info(f"Received test authentication request with threshold={threshold}")
-        
-        # Проверка имени файла
-        if audio_file.filename == '':
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "No selected file"}
-            )
-            
-        # Создание временного файла с безопасным именем
-        filename = audio_file.filename
-        temp_file_path = os.path.join(UPLOAD_FOLDER, f"test_{uuid.uuid4()}_{filename}")
-        
-        # Сохранение файла
-        try:
-            with open(temp_file_path, "wb") as buffer:
-                content = await audio_file.read()
-                buffer.write(content)
-        except Exception as file_error:
-            logger.error(f"Error saving uploaded file: {file_error}")
-            return JSONResponse(
-                status_code=500,
-                content={"success": False, "message": f"Error saving file: {str(file_error)}"}
-            )
-        
-        # Проверка файла
-        if not os.path.exists(temp_file_path):
-            return JSONResponse(
-                status_code=500,
-                content={"success": False, "message": "Failed to save audio file"}
-            )
-            
-        # Преобразование в WAV если необходимо
-        final_file_path = temp_file_path
-        if not filename.lower().endswith('.wav'):
-            try:
-                # Используем ffmpeg для конвертации в WAV
-                converted_path = os.path.join(UPLOAD_FOLDER, f"test_{uuid.uuid4()}.wav")
-                subprocess.run([
-                    'ffmpeg', '-y', '-i', temp_file_path,
-                    '-ar', '16000', '-ac', '1', '-f', 'wav', converted_path
-                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                
-                if os.path.exists(converted_path):
-                    final_file_path = converted_path
-                    logger.info(f"Converted audio file to WAV: {final_file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to convert audio format: {e}")
-                # Продолжаем с оригинальным файлом
-        
-        # Отправка запроса на спуфинг-детекцию в ML сервис
-        try:
-            # Подготовка файла для отправки
-            with open(final_file_path, 'rb') as f:
-                files = {'audio_data': (os.path.basename(final_file_path), f)}
-                
-                # Отправка запроса
-                spoof_response = requests.post(
-                    f"{ML_SERVICE_URL}/detect_spoofing", 
-                    files=files
-                )
-                
-                # Проверка ответа
-                if spoof_response.status_code != 200:
-                    logger.error(f"ML service returned status code: {spoof_response.status_code}")
-                    return JSONResponse(
-                        status_code=500,
-                        content={"success": False, "message": f"ML service error: {spoof_response.text}"}
-                    )
-                    
-                # Получение результата
-                spoof_result = spoof_response.json()
-                
-                # Проверка на спуфинг
-                is_spoof = spoof_result.get("is_spoof", False)
-                spoof_prob = spoof_result.get("spoof_probability", 0.1)
-                
-                # Используем более строгий порог для предотвращения ложных срабатываний
-                spoof_threshold = 0.4
-                
-                if is_spoof or spoof_prob > spoof_threshold:
-                    logger.warning(f"Spoofing detected in test file: {spoof_prob:.4f}")
-                    
-                    # Сохраняем результат теста
-                    test_result = {
-                        "success": True,
-                        "authorized": False,
-                        "spoofing_detected": True,
-                        "spoof_probability": float(spoof_prob),
-                        "match_score": 0,
-                        "user_id": None,
-                        "threshold": float(threshold),
-                        "test_file": os.path.basename(filename),
-                        "expected_user": expected_user
-                    }
-                    
-                    # Записываем результат в лог
-                    await log_test_result(test_result)
-                    
-                    # Удаляем временные файлы
-                    cleanup_temp_files([temp_file_path, final_file_path])
-                    
-                    return test_result
-        except Exception as e:
-            logger.error(f"Error during spoofing detection: {e}")
-            # Продолжаем без спуфинг-детекции
-        
-        # Извлечение эмбеддинга и сопоставление с пользователями
-        try:
-            # Подготовка файла для отправки
-            with open(final_file_path, 'rb') as f:
-                files = {'audio_data': (os.path.basename(final_file_path), f)}
-                
-                # Отправка запроса на извлечение эмбеддинга
-                embedding_response = requests.post(
-                    f"{ML_SERVICE_URL}/extract_embedding", 
-                    files=files
-                )
-                
-                # Проверка ответа
-                if embedding_response.status_code != 200:
-                    logger.error(f"ML service returned status code: {embedding_response.status_code}")
-                    return JSONResponse(
-                        status_code=500,
-                        content={"success": False, "message": f"ML service error: {embedding_response.text}"}
-                    )
-                    
-                # Получение эмбеддинга
-                embedding_result = embedding_response.json()
-                embedding = embedding_result.get("embedding", [])
-                
-                # Отправка запроса на сопоставление с пользователями
-                match_data = {
-                    "embedding": embedding,
-                    "threshold": float(threshold)
-                }
-                
-                match_response = requests.post(
-                    f"{ML_SERVICE_URL}/match_user_detailed",
-                    json=match_data
-                )
-                
-                # Проверка ответа
-                if match_response.status_code != 200:
-                    logger.error(f"ML service returned status code: {match_response.status_code}")
-                    return JSONResponse(
-                        status_code=500,
-                        content={"success": False, "message": f"ML service error: {match_response.text}"}
-                    )
-                    
-                # Получение результата
-                match_result = match_response.json()
-                
-                # Формирование результата теста
-                test_result = {
-                    "success": True,
-                    "authorized": match_result.get("match_found", False),
-                    "user_id": match_result.get("user_id"),
-                    "match_score": int(match_result.get("similarity", 0) * 100),
-                    "spoofing_detected": False,
-                    "similarity": float(match_result.get("similarity", 0)),
-                    "threshold": float(match_result.get("threshold", threshold)),
-                    "match_found": match_result.get("match_found", False),
-                    "test_file": os.path.basename(filename),
-                    "expected_user": expected_user
-                }
-                
-                # Добавляем информацию о кандидатах на совпадение
-                if "match_candidates" in match_result:
-                    test_result["match_candidates"] = match_result["match_candidates"]
-                    
-                # Если есть детальная информация о сходстве
-                if "detailed_similarity" in match_result:
-                    test_result["detailed_similarity"] = match_result["detailed_similarity"]
-                
-                # Записываем результат в лог
-                await log_test_result(test_result)
-                
-                # Удаляем временные файлы
-                cleanup_temp_files([temp_file_path, final_file_path])
-                
-                return test_result
-                
-        except Exception as e:
-            logger.error(f"Error during embedding extraction and matching: {e}")
-            return JSONResponse(
-                status_code=500,
-                content={"success": False, "message": f"Processing error: {str(e)}"}
-            )
-    except Exception as e:
-        logger.error(f"Error in test authentication: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": str(e)}
-        )
-
-def cleanup_temp_files(file_paths):
-    """Удаляет временные файлы"""
-    for path in file_paths:
-        try:
-            if os.path.exists(path) and path != file_paths[0]:  # Не удаляем исходный файл
-                os.remove(path)
-                logger.info(f"Removed temp file: {path}")
-        except Exception as e:
-            logger.warning(f"Failed to remove temp file {path}: {e}")
-            
-async def log_test_result(result):
-    """Записывает результат теста в лог"""
-    try:
-        # Имя файла лога с текущей датой
-        log_file = os.path.join(LOG_FOLDER, f"voice_auth_tests_{datetime.now().strftime('%Y-%m-%d')}.jsonl")
-        
-        # Добавляем метку времени к результату
-        result["timestamp"] = datetime.now().isoformat()
-        
-        # Создаем директорию для логов, если её нет
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        
-        # Записываем в файл в формате JSON Lines
-        with open(log_file, "a") as f:
-            f.write(json.dumps(result) + "\n")
-            
-        logger.info(f"Logged test result to {log_file}")
-    except Exception as e:
-        logger.error(f"Error logging test result: {e}")
-
 @app.get("/api/users/list")
 async def list_users():
     """
@@ -2383,280 +1791,6 @@ async def list_users():
             status_code=500,
             content={"success": False, "message": str(e)}
         )
-
-
-# Для поддержки WebSocket-соединений
-@app.websocket("/api/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket для передачи событий аутентификации в реальном времени"""
-    await manager.connect(websocket)
-    try:
-        # Отправка последних событий для инициализации
-        recent_events = await db.logs.find({
-            "event_type": {"$in": ["authorization_successful", "authorization_attempt", "spoofing_attempt"]}
-        }).sort("timestamp", -1).limit(10).to_list(10)
-
-        for event in recent_events:
-            event_data = format_auth_event(event)
-            await websocket.send_json(event_data)
-
-        # Ожидание сообщений для поддержания соединения
-        while True:
-            data = await websocket.receive_text()
-            if data == "ping":
-                await websocket.send_text("pong")
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-# Исправление: Функция должна быть объявлена как async
-async def format_auth_event(event):
-    """Форматирование события аутентификации для отправки через WebSocket"""
-    from bson.objectid import ObjectId
-
-    # Определение типа события
-    event_type = "success" if event["event_type"] == "authorization_successful" else \
-        "spoof" if event["event_type"] == "spoofing_attempt" else "failure"
-
-    # Базовая информация
-    formatted_event = {
-        "id": str(event["_id"]),
-        "timestamp": event["timestamp"].isoformat() if isinstance(event["timestamp"], datetime) else event[
-            "timestamp"],
-        "type": event_type,
-        "user_id": event.get("user_id"),
-        "similarity": event.get("details", {}).get("similarity")
-    }
-
-    # Добавление информации о пользователе
-    if event.get("user_id"):
-        user_info = None
-        user = await db.users.find_one({"_id": ObjectId(event["user_id"])})
-        if user:
-            user_info = {
-                "id": str(user["_id"]),
-                "name": user.get("name", "Неизвестный пользователь"),
-                "department": user.get("department", ""),
-                "position": user.get("position", "")
-            }
-            formatted_event["user"] = user_info
-
-    return formatted_event
-
-# Эндпоинты для управления режимом КПП
-@app.post("/api/kpp/start")
-async def start_kpp_mode():
-    """Запуск режима КПП"""
-    try:
-        # Уведомляем аудио-процессор
-        response = await call_audio_processor("kpp_mode", {
-            "enabled": True,
-            "sensitivity": 0.03,  # Можно сделать настраиваемым
-            "min_speech_duration": 1.5,
-            "auto_reset_delay": 5,
-            "callback_url": f"{os.environ.get('API_BASE_URL', 'http://api:5000')}/api/kpp/callback"
-        })
-
-        # Сохраняем информацию о состоянии в БД
-        await db.system_status.update_one(
-            {"_id": "kpp_status"},
-            {"$set": {
-                "active": True,
-                "started_at": datetime.now(),
-                "settings": {
-                    "sensitivity": 0.03,
-                    "min_speech_duration": 1.5,
-                    "auto_reset_delay": 5
-                }
-            }},
-            upsert=True
-        )
-
-        return {"status": "started", "message": "Режим КПП активирован"}
-    except Exception as e:
-        logger.error(f"Error starting KPP mode: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/kpp/stop")
-async def stop_kpp_mode():
-    """Остановка режима КПП"""
-    try:
-        # Отключение в аудио-процессоре
-        response = await call_audio_processor("kpp_mode", {
-            "enabled": False
-        })
-
-        # Обновление статуса в БД
-        await db.system_status.update_one(
-            {"_id": "kpp_status"},
-            {"$set": {
-                "active": False,
-                "stopped_at": datetime.datetime.now()
-            }}
-        )
-
-        return {"status": "stopped", "message": "Режим КПП деактивирован"}
-    except Exception as e:
-        logger.error(f"Error stopping KPP mode: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/kpp/status")
-async def get_kpp_status(db=Depends(get_db)):
-    """Проверка статуса режима КПП"""
-    try:
-        status = await db.system_status.find_one({"_id": "kpp_status"})
-
-        # Если записи нет, режим не активен
-        if not status:
-            return {
-                "active": False,
-                "message": "Режим КПП никогда не был активирован"
-            }
-
-        # Форматирование для JSON
-        status["_id"] = str(status["_id"])
-
-        # Преобразуем даты в строки ISO
-        for key in ["started_at", "stopped_at"]:
-            if key in status and isinstance(status[key], datetime.datetime):
-                status[key] = status[key].isoformat()
-
-        return status
-    except Exception as e:
-        logger.error(f"Error getting KPP status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/kpp/callback")
-async def kpp_callback(file_path: str):
-    """Обработка аудио из режима КПП"""
-    try:
-        logger.info(f"Received KPP callback: file_path={file_path}")
-
-        # Проверка существования файла
-        if not os.path.exists(file_path):
-            logger.error(f"Audio file not found: {file_path}")
-            return {"success": False, "error": "Audio file not found"}
-
-        # Извлечение эмбеддинга и проверка спуфинга через ML-модель
-        try:
-            # Сначала проверяем на спуфинг
-            anti_spoof_result = await call_ml_service("POST", "/detect_spoofing", {
-                "audio_path": file_path
-            })
-
-            if anti_spoof_result.get("is_spoof", False):
-                # Обнаружена попытка подделки
-                logger.warning(
-                    f"Spoofing detected in file {file_path}: {anti_spoof_result.get('spoof_probability', 0)}")
-
-                # Логируем событие
-                event_data = {
-                    "event_type": "spoofing_attempt",
-                    "timestamp": datetime.datetime.now(),
-                    "success": False,
-                    "details": {
-                        "audio_path": file_path,
-                        "spoof_probability": anti_spoof_result.get("spoof_probability", 0),
-                        "source": "kpp_callback"
-                    }
-                }
-
-                # Сохраняем в БД
-                result = await db.logs.insert_one(event_data)
-
-                # Отправляем через WebSocket или другие механизмы оповещения
-                # ...
-
-                return {
-                    "success": True,
-                    "authorized": False,
-                    "spoofing_detected": True,
-                    "message": "Обнаружена попытка подделки голоса"
-                }
-
-            # Сравнение с базой голосов
-            embedding_result = await call_ml_service("POST", "/extract_embedding", {
-                "audio_path": file_path
-            })
-
-            embedding = embedding_result.get("embedding")
-
-            if not embedding:
-                logger.error("Failed to extract embedding from audio")
-                return {"success": False, "error": "Failed to extract embedding"}
-
-            # Сравнение с эмбеддингами всех пользователей
-            match_result = await call_ml_service("POST", "/match_user_detailed", {
-                "embedding": embedding
-            })
-
-            user_id = match_result.get("user_id")
-            similarity = match_result.get("similarity", 0)
-            match_found = match_result.get("match_found", False)
-
-            # Готовим данные о событии аутентификации
-            event_data = {
-                "event_type": "authorization_successful" if match_found else "authorization_attempt",
-                "timestamp": datetime.datetime.now(),
-                "user_id": user_id,
-                "success": match_found,
-                "details": {
-                    "similarity": similarity,
-                    "match_score": int(similarity * 100),
-                    "audio_path": file_path,
-                    "source": "kpp_callback"
-                }
-            }
-
-            # Сохраняем в БД
-            result = await db.logs.insert_one(event_data)
-            event_id = str(result.inserted_id)
-
-            # Получаем информацию о пользователе если успешная аутентификация
-            user_info = None
-            if match_found and user_id:
-                from bson.objectid import ObjectId
-                user = await db.users.find_one({"_id": ObjectId(user_id)})
-
-                if user:
-                    user_info = {
-                        "id": str(user["_id"]),
-                        "name": user.get("name", "Неизвестный пользователь"),
-                        "department": user.get("department", ""),
-                        "position": user.get("position", ""),
-                        "access_level": user.get("access_level", "standard")
-                    }
-
-                    # Проверка наличия фото
-                    photo_path = os.path.join(AUDIO_PATH, user_id, "photo.jpg")
-                    if os.path.exists(photo_path):
-                        user_info["photo_url"] = f"/api/users/{user_id}/photo"
-
-            auth_result = {
-                "success": True,
-                "authorized": match_found,
-                "user": user_info,
-                "similarity": similarity,
-                "match_score": int(similarity * 100),
-                "event_id": event_id,
-                "spoofing_detected": False
-            }
-
-            logger.info(f"Authentication result: {auth_result}")
-
-            # Отправка результата через WebSocket всем подключенным клиентам (если реализовано)
-            # ...
-
-            return auth_result
-
-        except Exception as e:
-            logger.error(f"Error processing audio for authentication: {e}")
-            return {"success": False, "error": str(e)}
-    except Exception as e:
-        logger.error(f"Error in KPP callback: {e}")
-        return {"success": False, "error": str(e)}
-
 
 @app.post("/api/users/{user_id}/delete")
 async def delete_user(
@@ -2802,31 +1936,112 @@ def voice_system_status():
             'timestamp': datetime.now().isoformat()
         }), 500
 
-@app.post("/system/reinitialize")
-async def reinitialize_system():
-    """Полная переинициализация системы"""
+
+# Добавьте этот эндпоинт в ваш файл api/app.py после существующего POST эндпоинта для загрузки фото
+
+# Замените эндпоинт для получения фото в api/app.py на эту улучшенную версию
+
+@app.get("/api/users/{user_id}/photo")
+async def get_user_photo(
+        user_id: str,
+        db=Depends(get_db)
+):
+    """Получение фотографии пользователя с поддержкой placeholder'a"""
     try:
-        # Перезагрузка эмбеддингов
-        emb_success = force_reload_embeddings()
+        # Проверка существования пользователя
+        from bson.objectid import ObjectId
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
 
-        # Сброс порогов
-        global adaptive_threshold, SPOOFING_THRESHOLD
-        adaptive_threshold = 0.5  # Установите низкий порог для тестирования
-        SPOOFING_THRESHOLD = 0.7  # Высокий порог для спуфинга
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-        return {
-            "success": True,
-            "embeddings_reloaded": emb_success,
-            "user_count": len(user_embeddings),
-            "adaptive_threshold": adaptive_threshold,
-            "spoofing_threshold": SPOOFING_THRESHOLD
-        }
+        # Путь к фото пользователя
+        photo_path = os.path.join(AUDIO_PATH, user_id, "photo.jpg")
+
+        # Проверка существования файла
+        if os.path.exists(photo_path):
+            return FileResponse(
+                photo_path,
+                media_type="image/jpeg",
+                filename=f"user_{user_id}_photo.jpg"
+            )
+        else:
+            # Если фото нет, создаем простой SVG placeholder
+            placeholder_svg = create_user_placeholder_svg(user.get('name', 'User'))
+
+            return Response(
+                content=placeholder_svg,
+                media_type="image/svg+xml",
+                headers={"Cache-Control": "public, max-age=3600"}
+            )
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error reinitializing system: {e}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        logger.error(f"Error getting user photo: {e}")
+        # Возвращаем простой placeholder при ошибке
+        placeholder_svg = create_user_placeholder_svg("User")
+        return Response(
+            content=placeholder_svg,
+            media_type="image/svg+xml"
+        )
+
+
+def create_user_placeholder_svg(name):
+    """Создает SVG placeholder для пользователя"""
+    # Получаем первые буквы имени
+    initials = "".join([word[0].upper() for word in name.split()[:2]]) if name else "U"
+
+    # Простой цвет на основе имени
+    colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"]
+    color = colors[hash(name) % len(colors)] if name else "#6c757d"
+
+    svg_content = f'''<svg width="150" height="150" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="75" cy="75" r="75" fill="{color}"/>
+        <text x="75" y="85" font-family="Arial, sans-serif" font-size="48" font-weight="bold" 
+              text-anchor="middle" fill="white">{initials}</text>
+    </svg>'''
+
+    return svg_content
+
+
+# Также добавьте эндпоинт для удаления фото (опционально)
+@app.delete("/api/users/{user_id}/photo")
+async def delete_user_photo(
+        user_id: str,
+        db=Depends(get_db)
+):
+    """Удаление фотографии пользователя"""
+    try:
+        # Проверка существования пользователя
+        from bson.objectid import ObjectId
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Путь к фото пользователя
+        photo_path = os.path.join(AUDIO_PATH, user_id, "photo.jpg")
+
+        # Удаление файла если существует
+        if os.path.exists(photo_path):
+            os.remove(photo_path)
+
+            # Обновление информации в базе данных
+            await db.users.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": {"has_photo": False}}
+            )
+
+            return {"success": True, "message": "Photo deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Photo not found")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting user photo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Запуск сервера для локальной разработки
 if __name__ == "__main__":

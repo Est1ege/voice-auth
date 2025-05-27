@@ -337,6 +337,9 @@ async function sendAudioToServer(formData) {
 }
 
 // Handle authentication result
+// Замените функцию handleAuthenticationResult в voice-auth.js на эту исправленную версию
+
+// Handle authentication result
 function handleAuthenticationResult(result) {
     const resultContainer = document.getElementById('resultContainer');
     const userName = document.getElementById('userName');
@@ -361,12 +364,47 @@ function handleAuthenticationResult(result) {
     if (userDepartment) userDepartment.textContent = `Department: ${result.user?.department || 'System Access'}`;
     if (userPosition) userPosition.textContent = `Position: ${result.user?.position || 'Authenticated User'}`;
 
-    // Display user photo if available
+    // ИСПРАВЛЕНО: Правильная обработка фото пользователя
     if (userPhoto) {
-        if (result.user?.photo) {
-            userPhoto.src = result.user.photo;
+        // Сначала устанавливаем placeholder
+        userPhoto.src = '/static/img/default-user.jpg';
+
+        // Проверяем различные источники фото
+        let photoUrl = null;
+
+        if (result.user?.photo_url) {
+            // Если есть прямая ссылка на фото
+            photoUrl = result.user.photo_url;
+        } else if (result.user?.has_photo && result.user?.id) {
+            // Если у пользователя есть фото, строим URL через прокси
+            photoUrl = `/api-proxy/users/${result.user.id}/photo`;
+        } else if (result.user_id) {
+            // Пробуем загрузить фото по user_id
+            photoUrl = `/api-proxy/users/${result.user_id}/photo`;
+        }
+
+        if (photoUrl) {
+            console.log('Attempting to load user photo from:', photoUrl);
+
+            // Создаем новый объект Image для проверки загрузки
+            const img = new Image();
+
+            img.onload = function() {
+                console.log('User photo loaded successfully');
+                userPhoto.src = photoUrl;
+            };
+
+            img.onerror = function() {
+                console.log('Failed to load user photo, using default');
+                userPhoto.src = '/static/img/default-user.jpg';
+            };
+
+            // Устанавливаем таймаут для загрузки фото
+            setTimeout(() => {
+                img.src = photoUrl;
+            }, 100);
         } else {
-            userPhoto.src = '/static/img/default-user.jpg';
+            console.log('No photo URL available, using default');
         }
     }
 
@@ -454,8 +492,17 @@ function handleAuthenticationResult(result) {
         spoofingDiv.textContent = `Voice Authenticity Score: ${spoofingScore}%`;
         accessBadgeContainer.appendChild(spoofingDiv);
     }
-}
 
+    // ДОБАВЛЕНО: Логирование результата для отладки
+    console.log('Authentication result processed:', {
+        user: result.user,
+        user_id: result.user_id,
+        has_photo: result.user?.has_photo,
+        photo_url: result.user?.photo_url,
+        similarity: result.similarity,
+        authorized: result.authorized
+    });
+}
 // Show error result
 function showErrorResult(message) {
     const resultContainer = document.getElementById('resultContainer');

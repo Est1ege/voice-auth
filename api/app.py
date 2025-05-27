@@ -868,17 +868,20 @@ async def authorize_user(
                 photo_path = os.path.join(AUDIO_PATH, user_id_str, "photo.jpg")
                 if os.path.exists(photo_path):
                     user_data["has_photo"] = True
-                    user_data["photo_url"] = f"/api/users/{user_id_str}/photo"
+                    user_data["photo_url"] = f"/api-proxy/users/{user_id_str}/photo"
+                    logger.info(f"User {user_id_str} has photo at {photo_path}")
                 else:
                     user_data["has_photo"] = False
+                    logger.info(f"User {user_id_str} has no photo (checked path: {photo_path})")
 
                 return {
                     "authorized": True,
                     "user": user_data,
-                    "similarity": {
-                        "score": similarity,
-                        "details": detailed_similarity
-                    },
+                    "user_id": user_id_str,  # ДОБАВЛЕНО: Явно передаем user_id
+                    "similarity": similarity,
+                    "match_score": int(similarity * 100),  # ДОБАВЛЕНО: Процентное значение
+                    "spoofing_detected": False,
+                    "threshold": similarity_threshold
                 }
             else:
                 # Логирование неудачной попытки
@@ -895,25 +898,37 @@ async def authorize_user(
                 await db.logs.insert_one(log_entry.dict(exclude={"id"}))
 
                 # Если есть близкое совпадение, указываем имя пользователя
-                best_match_name = None
-                if matched_user_id:
+                best_match_user = None
+                if matched_user_id and similarity >= 0.3:  # Показываем пользователя если similarity >= 30%
                     from bson.objectid import ObjectId
                     best_match = await db.users.find_one({"_id": ObjectId(matched_user_id)})
                     if best_match:
-                        best_match_name = best_match.get("name")
+                        user_id_str = str(best_match["_id"])
+                        best_match_user = {
+                            "id": user_id_str,
+                            "name": best_match.get("name", ""),
+                            "department": best_match.get("department", ""),
+                            "position": best_match.get("position", ""),
+                            "access_level": best_match.get("access_level", "standard")
+                        }
+
+                        # Проверяем фото для лучшего совпадения
+                        photo_path = os.path.join(AUDIO_PATH, user_id_str, "photo.jpg")
+                        if os.path.exists(photo_path):
+                            best_match_user["has_photo"] = True
+                            best_match_user["photo_url"] = f"/api-proxy/users/{user_id_str}/photo"
+                        else:
+                            best_match_user["has_photo"] = False
 
                 return {
                     "authorized": False,
-                    "message": "Голос не распознан или недостаточно совпадение. Пожалуйста, попробуйте снова.",
-                    "similarity": {
-                        "score": similarity,
-                        "details": detailed_similarity
-                    },
-                    "best_match": {
-                        "id": matched_user_id,
-                        "name": best_match_name,
-                        "similarity": similarity
-                    } if matched_user_id else None
+                    "message": "Голос не распознан или недостаточное совпадение.",
+                    "similarity": similarity,
+                    "match_score": int(similarity * 100),
+                    "spoofing_detected": False,
+                    "threshold": similarity_threshold,
+                    "user": best_match_user,  # ДОБАВЛЕНО: Информация о лучшем совпадении
+                    "user_id": matched_user_id if best_match_user else None
                 }
         finally:
             # Удаление всех временных файлов

@@ -8,6 +8,11 @@ services:
       - ./nginx/conf:/etc/nginx/conf.d
       - ./nginx/ssl:/etc/nginx/ssl
       - ./static:/usr/share/nginx/html
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Almaty
+      - PYTHONUNBUFFERED=1
     depends_on:
       - web
     networks:
@@ -22,7 +27,11 @@ services:
       - ./web:/app
       - ./shared:/shared
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
+      - TZ=Asia/Almaty
+      - PYTHONUNBUFFERED=1
       - FLASK_APP=app.py
       - FLASK_DEBUG=0
       - SECRET_KEY=${SECRET_KEY}
@@ -46,7 +55,11 @@ services:
       - ./api:/app
       - ./shared:/shared
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
+      - TZ=Asia/Almaty
+      - PYTHONUNBUFFERED=1
       - MODEL_PATH=/shared/models
       - DATABASE_URL=mongodb://mongo:password123@db:27017/voice_auth
       - ML_SERVICE_URL=http://ml_model:5000
@@ -73,9 +86,22 @@ services:
     volumes:
       - ./ml_model:/app
       - ./shared:/shared
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - MODEL_PATH=/shared/models
       - EMBEDDINGS_PATH=/shared/embeddings
+      - TZ=Asia/Qyzylorda
+      - PYTHONUNBUFFERED=1
+      - LANG=en_US.UTF-8
+      - LC_ALL=en_US.UTF-8
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+      - PYTHONIOENCODING=utf-8
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
+      - NUMBA_NUM_THREADS=4
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
       interval: 15s
@@ -101,8 +127,12 @@ services:
     volumes:
       - ./audio_processor:/app
       - ./shared:/shared
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - AUDIO_PATH=/shared/audio
+      - TZ=Asia/Almaty
+      - PYTHONUNBUFFERED=1
     ports:
       - "5003:5000"
     networks:
@@ -113,11 +143,15 @@ services:
     volumes:
       - db_data:/data/db
       - ./db/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     command: ["mongod", "--auth"]
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${DB_USER}
       - MONGO_INITDB_ROOT_PASSWORD=${DB_PASSWORD}
       - MONGO_INITDB_DATABASE=voice_auth
+      - TZ=Asia/Almaty
+      - PYTHONUNBUFFERED=1
     ports:
       - "27017:27017"
     networks:

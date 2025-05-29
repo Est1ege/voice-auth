@@ -699,7 +699,7 @@ async def authorize_user(
         audio_data: UploadFile = File(...),
         db=Depends(get_db)
 ):
-    """Авторизация пользователя по голосу с улучшенной обработкой аудиофайлов"""
+    """Авторизация пользователя по голосу с улучшенной обработкой и более мягкими порогами"""
     try:
         # Создание общей директории для временных файлов, если она не существует
         shared_temp_dir = "/shared/temp"
@@ -733,7 +733,6 @@ async def authorize_user(
             final_file_path = temp_file_path
             try:
                 # Используем ffmpeg для принудительного преобразования в формат WAV 16kHz, моно
-                # Это решает проблему совместимости с алгоритмом распознавания
                 converted_path = os.path.join(shared_temp_dir, f"auth_{file_uuid}_conv.wav")
                 import subprocess
 
@@ -806,9 +805,10 @@ async def authorize_user(
             similarity = match_result.get("similarity", 0)
             detailed_similarity = match_result.get("detailed_similarity", {})
 
-            # Порог сходства для авторизации (можно настроить)
+            # ИСПРАВЛЕНО: Используем более мягкий порог авторизации
             settings = await db.settings.find_one({"type": "system_settings"})
-            similarity_threshold = settings.get("voice_similarity_threshold", 0.4) if settings else 0.4
+            # Снижаем стандартный порог с 0.4 до 0.3 (30%)
+            similarity_threshold = settings.get("voice_similarity_threshold", 0.3) if settings else 0.3
 
             logger.info(
                 f"Match result: user_id={matched_user_id}, similarity={similarity}, threshold={similarity_threshold}")
@@ -858,7 +858,6 @@ async def authorize_user(
                     "name": user.get("name", ""),
                     "email": user.get("email", ""),
                     "role": user.get("role", "user"),
-                    # Добавляем дополнительные данные для КПП
                     "department": user.get("department", ""),
                     "position": user.get("position", ""),
                     "access_level": user.get("access_level", "standard")
@@ -877,9 +876,9 @@ async def authorize_user(
                 return {
                     "authorized": True,
                     "user": user_data,
-                    "user_id": user_id_str,  # ДОБАВЛЕНО: Явно передаем user_id
-                    "similarity": similarity,
-                    "match_score": int(similarity * 100),  # ДОБАВЛЕНО: Процентное значение
+                    "user_id": user_id_str,
+                    "similarity": similarity,  # РЕАЛЬНЫЙ процент совпадения
+                    "match_score": int(similarity * 100),  # РЕАЛЬНЫЙ процент в целых числах
                     "spoofing_detected": False,
                     "threshold": similarity_threshold
                 }
@@ -897,9 +896,10 @@ async def authorize_user(
                 )
                 await db.logs.insert_one(log_entry.dict(exclude={"id"}))
 
-                # Если есть близкое совпадение, указываем имя пользователя
+                # ИСПРАВЛЕНО: Показываем лучшего кандидата при более низком пороге
                 best_match_user = None
-                if matched_user_id and similarity >= 0.3:  # Показываем пользователя если similarity >= 30%
+                # Снижаем порог показа с 30% до 20%
+                if matched_user_id and similarity >= 0.2:  # Показываем пользователя если similarity >= 20%
                     from bson.objectid import ObjectId
                     best_match = await db.users.find_one({"_id": ObjectId(matched_user_id)})
                     if best_match:
@@ -922,26 +922,22 @@ async def authorize_user(
 
                 return {
                     "authorized": False,
-                    "message": "Голос не распознан или недостаточное совпадение.",
-                    "similarity": similarity,
-                    "match_score": int(similarity * 100),
+                    "message": f"Голос не распознан или недостаточное совпадение. Требуется минимум {int(similarity_threshold * 100)}%, получено {int(similarity * 100)}%.",
+                    "similarity": similarity,  # РЕАЛЬНЫЙ процент совпадения
+                    "match_score": int(similarity * 100),  # РЕАЛЬНЫЙ процент в целых числах
                     "spoofing_detected": False,
                     "threshold": similarity_threshold,
-                    "user": best_match_user,  # ДОБАВЛЕНО: Информация о лучшем совпадении
+                    "user": best_match_user,
                     "user_id": matched_user_id if best_match_user else None
                 }
         finally:
             # Удаление всех временных файлов
             try:
-                # Список файлов для удаления
                 temp_files = [temp_file_path]
-
-                # Добавляем конвертированный файл, если он был создан
                 converted_path = os.path.join(shared_temp_dir, f"auth_{file_uuid}_conv.wav")
                 if os.path.exists(converted_path):
                     temp_files.append(converted_path)
 
-                # Удаляем все временные файлы
                 for file_path in temp_files:
                     if os.path.exists(file_path):
                         os.remove(file_path)

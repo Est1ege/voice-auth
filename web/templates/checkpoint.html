@@ -216,6 +216,14 @@
             font-size: 12px;
             margin-left: 10px;
         }
+        .detail-info {
+            font-size: 12px !important;
+            color: #6c757d !important;
+            margin-top: 5px;
+        }
+        .spoofing-info {
+            color: #17a2b8 !important;
+        }
         @keyframes pulse {
             0% {
                 transform: scale(1);
@@ -260,9 +268,10 @@
 
             <div class="auth-info">
                 <p><strong>System Information:</strong></p>
-                <p>Current recognition threshold: 0.7 (70%)</p>
+                <p>Recognition threshold: Dynamic (30-35%)</p>
                 <p>Audio saving mode: disabled</p>
                 <p>Voice spoofing protection: enabled</p>
+                <p>Match display: Real-time percentage</p>
             </div>
 
             <div class="mic-container">
@@ -306,7 +315,7 @@
 
     <footer class="text-center py-3 text-muted">
         <div class="container">
-            <p>© 2025 Voice Authentication System</p>
+            <p>© 2025 Voice Authentication System - Improved Matching Algorithm</p>
         </div>
     </footer>
 

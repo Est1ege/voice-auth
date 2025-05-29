@@ -234,6 +234,7 @@ function handleRecordingStop() {
 }
 
 // Send audio to server for authentication
+// Send audio to server for authentication
 async function sendAudioToServer(formData) {
     try {
         // Show loading indicator
@@ -285,46 +286,33 @@ async function sendAudioToServer(formData) {
 
         const result = await response.json();
 
-        // MODIFIED: Use fixed threshold of 0.4 (40%) and always show user
-        if (result.threshold) {
-            console.log('Original threshold:', result.threshold);
-            result.threshold = 0.4; // Set to 40%
-        }
+        // УБРАНО: Больше не переопределяем threshold и similarity
+        // Используем значения, полученные от сервера
 
-        // MODIFIED: Check if similarity meets 40% threshold - always authorize if >= 0.4
-        if (result.similarity !== undefined && result.similarity >= 0.4) {
-            console.log('Authorizing user as similarity', result.similarity, 'meets 40% threshold');
-            result.authorized = true;
-            result.match_found = true;
-        }
+        // Логируем полученный результат
+        console.log('Authentication result from server:', {
+            authorized: result.authorized,
+            similarity: result.similarity,
+            match_score: result.match_score,
+            threshold: result.threshold,
+            user_id: result.user_id,
+            spoofing_detected: result.spoofing_detected
+        });
 
-        // ДОПОЛНИТЕЛЬНО: Всегда показываем лучшего кандидата если similarity >= 0.3 (30%)
-        if (result.similarity !== undefined && result.similarity >= 0.3 && !result.user) {
-            console.log('Showing user info for similarity', result.similarity, 'above 30% threshold');
-            result.show_user_info = true;
-        }
-
-        // MODIFIED: Always show user info regardless of authorization status
+        // ИСПРАВЛЕНО: Всегда показываем информацию о пользователе если есть совпадение
         if (!result.user && result.user_id) {
-            // Create default user info if not provided
+            // Если пользователь найден, но данные о нем не переданы, создаем базовую информацию
             result.user = {
+                id: result.user_id,
                 name: `User ${result.user_id}`,
                 department: 'Authentication System',
-                position: 'Authorized User'
-            };
-        } else if (!result.user) {
-            // Create generic user info for display
-            result.user = {
-                name: 'Voice Authentication User',
-                department: 'System Access',
-                position: 'Authenticated'
+                position: 'System User'
             };
         }
 
-        // Log successful result to console for debugging
-        console.log('Authentication result:', result);
-
+        // Передаем результат для обработки
         handleAuthenticationResult(result);
+
     } catch (error) {
         console.error('Error sending audio:', error);
 
@@ -335,10 +323,10 @@ async function sendAudioToServer(formData) {
         }
     }
 }
-
 // Handle authentication result
 // Замените функцию handleAuthenticationResult в voice-auth.js на эту исправленную версию
 
+// Handle authentication result
 // Handle authentication result
 function handleAuthenticationResult(result) {
     const resultContainer = document.getElementById('resultContainer');
@@ -358,149 +346,161 @@ function handleAuthenticationResult(result) {
     // Update UI to normal state
     updateUIForNormal();
 
-    // MODIFIED: Always show user information regardless of authorization status
     // Fill user data - always display user info
     if (userName) userName.textContent = result.user?.name || 'Voice Authentication User';
     if (userDepartment) userDepartment.textContent = `Department: ${result.user?.department || 'System Access'}`;
     if (userPosition) userPosition.textContent = `Position: ${result.user?.position || 'Authenticated User'}`;
 
-    // ИСПРАВЛЕНО: Правильная обработка фото пользователя
+    // Handle user photo
     if (userPhoto) {
-        // Сначала устанавливаем placeholder
+        // Set placeholder first
         userPhoto.src = '/static/img/default-user.jpg';
 
-        // Проверяем различные источники фото
         let photoUrl = null;
-
         if (result.user?.photo_url) {
-            // Если есть прямая ссылка на фото
             photoUrl = result.user.photo_url;
         } else if (result.user?.has_photo && result.user?.id) {
-            // Если у пользователя есть фото, строим URL через прокси
             photoUrl = `/api-proxy/users/${result.user.id}/photo`;
         } else if (result.user_id) {
-            // Пробуем загрузить фото по user_id
             photoUrl = `/api-proxy/users/${result.user_id}/photo`;
         }
 
         if (photoUrl) {
             console.log('Attempting to load user photo from:', photoUrl);
-
-            // Создаем новый объект Image для проверки загрузки
             const img = new Image();
-
             img.onload = function() {
                 console.log('User photo loaded successfully');
                 userPhoto.src = photoUrl;
             };
-
             img.onerror = function() {
                 console.log('Failed to load user photo, using default');
                 userPhoto.src = '/static/img/default-user.jpg';
             };
-
-            // Устанавливаем таймаут для загрузки фото
-            setTimeout(() => {
-                img.src = photoUrl;
-            }, 100);
-        } else {
-            console.log('No photo URL available, using default');
+            setTimeout(() => { img.src = photoUrl; }, 100);
         }
     }
 
-    // Safe calculation of match percentage
+    // ИСПРАВЛЕНО: Используем реальный процент совпадения из ответа сервера
     let matchPercentage = 0;
-    if (result.similarity !== undefined) {
-        // Check for NaN and Infinity
-        if (isNaN(result.similarity) || !isFinite(result.similarity)) {
-            matchPercentage = 40; // Use default value instead of 0
-        } else {
-            matchPercentage = Math.round(result.similarity * 100);
-        }
+
+    // Проверяем различные источники процента совпадения
+    if (result.match_score !== undefined && !isNaN(result.match_score)) {
+        // Используем готовый match_score из сервера
+        matchPercentage = result.match_score;
+    } else if (result.similarity !== undefined && !isNaN(result.similarity)) {
+        // Вычисляем из similarity (0.0-1.0 к 0-100%)
+        matchPercentage = Math.round(result.similarity * 100);
+    } else {
+        // Fallback значение
+        matchPercentage = 0;
     }
+
+    // Убеждаемся, что процент в допустимых пределах
+    matchPercentage = Math.max(0, Math.min(100, matchPercentage));
 
     if (matchScore) {
         matchScore.textContent = `Match: ${matchPercentage}%`;
 
+        // Обновленные пороги для цветовой индикации
         if (matchPercentage >= 70) {
             matchScore.className = 'match-score high';
-        } else if (matchPercentage >= 40) { // MODIFIED: Changed from 70 to 40
+        } else if (matchPercentage >= 30) { // Снижено с 40 до 30
             matchScore.className = 'match-score medium';
         } else {
             matchScore.className = 'match-score low';
         }
     }
 
-    // MODIFIED: Process result based on 40% threshold
-    if (result.authorized || (result.similarity !== undefined && result.similarity >= 0.4)) {
-        // Successful authorization (40% or higher)
-        resultContainer.className = 'result-container authorized';
+    // ИСПРАВЛЕНО: Определяем порог авторизации из ответа сервера
+    let authThreshold = 30; // Значение по умолчанию 30%
+    if (result.threshold !== undefined) {
+        authThreshold = Math.round(result.threshold * 100);
+    }
 
-        // Display access status
+    // ИСПРАВЛЕНО: Логика авторизации основана на реальном проценте и пороге
+    if (result.authorized || matchPercentage >= authThreshold) {
+        // Успешная авторизация
+        resultContainer.className = 'result-container authorized';
         accessBadge.textContent = 'Access Granted';
         accessBadge.className = 'access-badge authorized';
 
         // Play success sound
         const successSound = document.getElementById('successSound');
         if (successSound) successSound.play();
+
+        console.log(`Access granted: ${matchPercentage}% >= ${authThreshold}% threshold`);
     } else {
-        // Failed authorization (below 40%)
+        // Отказ в авторизации
         resultContainer.className = 'result-container denied';
 
-        // Determine failure reason
+        // Определяем причину отказа
         let failureReason = 'Unknown error';
 
         if (result.spoofing_detected) {
             failureReason = 'Voice spoofing attempt detected';
         } else if (result.message) {
             failureReason = result.message;
-        } else if (result.similarity !== undefined) {
-            failureReason = 'Insufficient voice profile match (below 40%)';
+        } else {
+            failureReason = `Insufficient voice match: ${matchPercentage}% (required: ${authThreshold}%)`;
         }
 
-        // Update department field with failure reason
+        // Обновляем информацию о департаменте с причиной отказа
         if (userDepartment) {
             userDepartment.textContent = `Reason: ${failureReason}`;
         }
 
-        // Display access status
         accessBadge.textContent = 'Access Denied';
         accessBadge.className = 'access-badge denied';
 
         // Play failure sound
         const failureSound = document.getElementById('failureSound');
         if (failureSound) failureSound.play();
+
+        console.log(`Access denied: ${matchPercentage}% < ${authThreshold}% threshold`);
     }
 
-    // Add additional spoofing information
-    if (accessBadgeContainer && result.spoofing_score !== undefined) {
-        // Clear possible previous messages
+    // Добавляем информацию о защите от спуфинга
+    if (accessBadgeContainer && result.spoof_probability !== undefined) {
+        // Удаляем предыдущие сообщения о спуфинге
         const oldSpoofingInfos = accessBadgeContainer.querySelectorAll('.spoofing-info');
         oldSpoofingInfos.forEach(el => el.remove());
 
         const spoofingDiv = document.createElement('div');
         spoofingDiv.className = 'user-info spoofing-info';
 
-        // Protection from NaN
-        let spoofingScore;
-        if (isNaN(result.spoofing_score) || !isFinite(result.spoofing_score)) {
-            spoofingScore = 80; // High default value
-        } else {
-            spoofingScore = Math.round((1 - result.spoofing_score) * 100);
+        // Вычисляем показатель подлинности голоса
+        let authenticityScore = 85; // Значение по умолчанию
+        if (!isNaN(result.spoof_probability) && isFinite(result.spoof_probability)) {
+            authenticityScore = Math.round((1 - result.spoof_probability) * 100);
         }
 
-        spoofingDiv.textContent = `Voice Authenticity Score: ${spoofingScore}%`;
+        spoofingDiv.textContent = `Voice Authenticity: ${authenticityScore}%`;
         accessBadgeContainer.appendChild(spoofingDiv);
     }
 
-    // ДОБАВЛЕНО: Логирование результата для отладки
+    // Добавляем детальную информацию о совпадении
+    if (accessBadgeContainer) {
+        // Удаляем предыдущую детальную информацию
+        const oldDetailInfos = accessBadgeContainer.querySelectorAll('.detail-info');
+        oldDetailInfos.forEach(el => el.remove());
+
+        const detailDiv = document.createElement('div');
+        detailDiv.className = 'user-info detail-info';
+        detailDiv.style.fontSize = '12px';
+        detailDiv.style.color = '#6c757d';
+        detailDiv.textContent = `Threshold: ${authThreshold}% | Similarity: ${result.similarity ? (result.similarity * 100).toFixed(1) : '0.0'}%`;
+        accessBadgeContainer.appendChild(detailDiv);
+    }
+
+    // Логирование результата для отладки
     console.log('Authentication result processed:', {
-        user: result.user,
+        user: result.user?.name || 'Unknown',
         user_id: result.user_id,
-        has_photo: result.user?.has_photo,
-        photo_url: result.user?.photo_url,
+        match_percentage: matchPercentage,
+        threshold: authThreshold,
         similarity: result.similarity,
-        authorized: result.authorized
+        authorized: result.authorized,
+        spoofing_detected: result.spoofing_detected
     });
 }
 // Show error result

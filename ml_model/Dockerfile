@@ -1,6 +1,10 @@
 # Улучшенный Dockerfile
 FROM pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime
 
+ENV TZ=Asia/Almaty
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+
 WORKDIR /app
 
 # Установка системных зависимостей
@@ -14,7 +18,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     sox \
     libsox-fmt-all \
+    tzdata \
+    locales \
     && rm -rf /var/lib/apt/lists/*
+
+RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    dpkg-reconfigure --frontend=noninteractive locales && \
+    update-locale LANG=en_US.UTF-8
+
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 
 # Создание директорий для логов и моделей
 RUN mkdir -p /app/logs /shared/models /shared/embeddings /shared/audio /shared/temp
